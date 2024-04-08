@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -22,13 +23,14 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ManagerClient interface {
-	Lock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error)
-	Unlock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error)
-	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteRequest, error)
+	Lock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Unlock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Message(ctx context.Context, in *Client, opts ...grpc.CallOption) (Manager_MessageClient, error)
-	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*Client, error)
-	Stop(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error)
+	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	Stop(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Status(ctx context.Context, in *Client, opts ...grpc.CallOption) (*StatusResponse, error)
+	Login(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Client, error)
 }
 
 type managerClient struct {
@@ -39,8 +41,8 @@ func NewManagerClient(cc grpc.ClientConnInterface) ManagerClient {
 	return &managerClient{cc}
 }
 
-func (c *managerClient) Lock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error) {
-	out := new(Client)
+func (c *managerClient) Lock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, "/Manager/Lock", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -48,8 +50,8 @@ func (c *managerClient) Lock(ctx context.Context, in *Client, opts ...grpc.CallO
 	return out, nil
 }
 
-func (c *managerClient) Unlock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error) {
-	out := new(Client)
+func (c *managerClient) Unlock(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, "/Manager/Unlock", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -57,8 +59,8 @@ func (c *managerClient) Unlock(ctx context.Context, in *Client, opts ...grpc.Cal
 	return out, nil
 }
 
-func (c *managerClient) Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteRequest, error) {
-	out := new(WriteRequest)
+func (c *managerClient) Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, "/Manager/Write", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -82,7 +84,7 @@ func (c *managerClient) Message(ctx context.Context, in *Client, opts ...grpc.Ca
 }
 
 type Manager_MessageClient interface {
-	Recv() (*ListenResponse, error)
+	Recv() (*MessageResponse, error)
 	grpc.ClientStream
 }
 
@@ -90,16 +92,16 @@ type managerMessageClient struct {
 	grpc.ClientStream
 }
 
-func (x *managerMessageClient) Recv() (*ListenResponse, error) {
-	m := new(ListenResponse)
+func (x *managerMessageClient) Recv() (*MessageResponse, error) {
+	m := new(MessageResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (c *managerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*Client, error) {
-	out := new(Client)
+func (c *managerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	out := new(StatusResponse)
 	err := c.cc.Invoke(ctx, "/Manager/Start", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -107,8 +109,8 @@ func (c *managerClient) Start(ctx context.Context, in *StartRequest, opts ...grp
 	return out, nil
 }
 
-func (c *managerClient) Stop(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Client, error) {
-	out := new(Client)
+func (c *managerClient) Stop(ctx context.Context, in *Client, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, "/Manager/Stop", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -125,17 +127,27 @@ func (c *managerClient) Status(ctx context.Context, in *Client, opts ...grpc.Cal
 	return out, nil
 }
 
+func (c *managerClient) Login(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Client, error) {
+	out := new(Client)
+	err := c.cc.Invoke(ctx, "/Manager/Login", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ManagerServer is the server API for Manager service.
 // All implementations must embed UnimplementedManagerServer
 // for forward compatibility
 type ManagerServer interface {
-	Lock(context.Context, *Client) (*Client, error)
-	Unlock(context.Context, *Client) (*Client, error)
-	Write(context.Context, *WriteRequest) (*WriteRequest, error)
+	Lock(context.Context, *Client) (*emptypb.Empty, error)
+	Unlock(context.Context, *Client) (*emptypb.Empty, error)
+	Write(context.Context, *WriteRequest) (*emptypb.Empty, error)
 	Message(*Client, Manager_MessageServer) error
-	Start(context.Context, *StartRequest) (*Client, error)
-	Stop(context.Context, *Client) (*Client, error)
+	Start(context.Context, *StartRequest) (*StatusResponse, error)
+	Stop(context.Context, *Client) (*emptypb.Empty, error)
 	Status(context.Context, *Client) (*StatusResponse, error)
+	Login(context.Context, *emptypb.Empty) (*Client, error)
 	mustEmbedUnimplementedManagerServer()
 }
 
@@ -143,26 +155,29 @@ type ManagerServer interface {
 type UnimplementedManagerServer struct {
 }
 
-func (UnimplementedManagerServer) Lock(context.Context, *Client) (*Client, error) {
+func (UnimplementedManagerServer) Lock(context.Context, *Client) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Lock not implemented")
 }
-func (UnimplementedManagerServer) Unlock(context.Context, *Client) (*Client, error) {
+func (UnimplementedManagerServer) Unlock(context.Context, *Client) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unlock not implemented")
 }
-func (UnimplementedManagerServer) Write(context.Context, *WriteRequest) (*WriteRequest, error) {
+func (UnimplementedManagerServer) Write(context.Context, *WriteRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Write not implemented")
 }
 func (UnimplementedManagerServer) Message(*Client, Manager_MessageServer) error {
 	return status.Errorf(codes.Unimplemented, "method Message not implemented")
 }
-func (UnimplementedManagerServer) Start(context.Context, *StartRequest) (*Client, error) {
+func (UnimplementedManagerServer) Start(context.Context, *StartRequest) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Start not implemented")
 }
-func (UnimplementedManagerServer) Stop(context.Context, *Client) (*Client, error) {
+func (UnimplementedManagerServer) Stop(context.Context, *Client) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Stop not implemented")
 }
 func (UnimplementedManagerServer) Status(context.Context, *Client) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedManagerServer) Login(context.Context, *emptypb.Empty) (*Client, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Login not implemented")
 }
 func (UnimplementedManagerServer) mustEmbedUnimplementedManagerServer() {}
 
@@ -240,7 +255,7 @@ func _Manager_Message_Handler(srv interface{}, stream grpc.ServerStream) error {
 }
 
 type Manager_MessageServer interface {
-	Send(*ListenResponse) error
+	Send(*MessageResponse) error
 	grpc.ServerStream
 }
 
@@ -248,7 +263,7 @@ type managerMessageServer struct {
 	grpc.ServerStream
 }
 
-func (x *managerMessageServer) Send(m *ListenResponse) error {
+func (x *managerMessageServer) Send(m *MessageResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -306,6 +321,24 @@ func _Manager_Status_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Manager_Login_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServer).Login(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Manager/Login",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServer).Login(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Manager_ServiceDesc is the grpc.ServiceDesc for Manager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -336,6 +369,10 @@ var Manager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Status",
 			Handler:    _Manager_Status_Handler,
+		},
+		{
+			MethodName: "Login",
+			Handler:    _Manager_Login_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

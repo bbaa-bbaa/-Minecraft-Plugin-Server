@@ -1,0 +1,45 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+option go_package = "cgit.bbaa.fun/bbaa/minecraft-plugin-server/manager";
+
+enum MinecraftState {
+  stopped = 0;
+  running = 1;
+}
+
+message WriteRequest {
+  uint64 id = 1;
+  string content = 2;
+  Client client = 3;
+}
+
+message MessageResponse {
+  uint64 id = 1 ;
+  string type = 2;
+  string content = 3;
+}
+
+message StartRequest {
+  string path = 1;
+  Client client = 2;
+}
+
+message Client {
+  uint64 id = 1;
+}
+
+message StatusResponse {
+  MinecraftState state = 1;
+  uint64 usedmemory = 2;
+}
+
+service Manager {
+  rpc Lock(Client) returns (google.protobuf.Empty) {}
+  rpc Unlock(Client) returns (google.protobuf.Empty) {}
+  rpc Write(WriteRequest) returns(google.protobuf.Empty) {}
+  rpc Message(Client) returns(stream MessageResponse) {}
+  rpc Start(StartRequest) returns(StatusResponse) {}
+  rpc Stop(Client) returns(google.protobuf.Empty) {}
+  rpc Status(Client) returns(StatusResponse) {}
+  rpc Login(google.protobuf.Empty) returns(Client) {}
+}
