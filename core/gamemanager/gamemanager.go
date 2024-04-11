@@ -5,24 +5,35 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	pb "cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+func kPrintf(format string, a ...any) (n int, err error) {
+
+	return fmt.Printf(color.YellowString("[")+color.RedString("GameManager")+color.YellowString("] ")+strings.TrimRight(format, "\r\n")+"\r\n", a...)
+}
+
+func kPrintln(a ...any) (n int, err error) {
+
+	return kPrintf("%s", strings.TrimRight(fmt.Sprint(a...), "\n"))
+}
 
 type MinecraftVistor struct {
 	process *exec.Cmd
@@ -57,18 +68,23 @@ func (wl *WriteLock) Lock(client *pb.Client) {
 	wl.mutex.Lock()
 	wl.lockedClient = client
 	wl.time = time.AfterFunc(lockMaxTime, func() {
-		fmt.Printf("客户端[%d]的写入锁因超时而被取消\n", client.Id)
+		kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]的写入锁因超时而被取消"))
 		wl.Unlock(client)
 	})
 }
 
+type ForwardChannel struct {
+	channel chan string
+	id      uint64
+}
 type ManagerServer struct {
 	pb.UnimplementedManagerServer
 
 	minecraftInstance MinecraftVistor
 	forwardWorker     bool
-	forwardChannels   []chan string
+	forwardChannels   []*ForwardChannel
 	writeLock         WriteLock
+	messageBus        chan *pb.MessageResponse
 }
 
 var (
@@ -91,7 +107,7 @@ func (h *RPCHandler) HandleConn(c context.Context, s stats.ConnStats) {
 	switch s.(type) {
 	case *stats.ConnEnd:
 		clientId := c.Value(RPCConnInfo("id")).(uint64)
-		fmt.Printf("客户端 Id:%d 断开连接\n", clientId)
+		kPrintln(color.RedString("客户端 Id:"), color.GreenString("%d ", clientId), color.RedString("断开连接"))
 		h.managerServer.writeLock.Unlock(&pb.Client{Id: clientId})
 	}
 }
@@ -124,7 +140,7 @@ func (ms *ManagerServer) logForwardWorker() {
 			default:
 				// 防止阻塞线程
 			//	fmt.Println("日志被丢弃!!:" + line)
-			case target <- line:
+			case target.channel <- line:
 				// do nothing
 			}
 		}
@@ -169,7 +185,7 @@ func (ms *ManagerServer) Start(ctx context.Context, req *pb.StartRequest) (c *pb
 	if ms.minecraftInstance.process != nil && !ms.minecraftInstance.process.ProcessState.Exited() {
 		return nil, ErrMinecraftAlreadyRunning
 	}
-	fmt.Printf("客户端[%d]: 启动服务器:%s\n", req.Client.Id, req.Path)
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.GreenString("]]: 启动服务器:"))
 	cmd := exec.Command(req.Path)
 	ms.minecraftInstance.process = cmd
 	cmd.Dir = path.Dir(req.Path)
@@ -205,19 +221,24 @@ func (ms *ManagerServer) Start(ctx context.Context, req *pb.StartRequest) (c *pb
 }
 
 func (ms *ManagerServer) Message(client *pb.Client, server pb.Manager_MessageServer) error {
-	fmt.Printf("接受客户端[%d]的消息流监听请求\n", client.Id)
-	message := make(chan string, 16384)
+	kPrintln(color.YellowString("接受客户端["), color.GreenString("%d", client.Id), color.YellowString("]的消息流监听请求"))
+	message := &ForwardChannel{channel: make(chan string, 16384)}
 	ms.forwardChannels = append(ms.forwardChannels, message)
 	for {
 		select {
-		case msg := <-message:
-			server.Send(&pb.MessageResponse{Id: 0, Type: "stdout", Content: msg})
+		case msg := <-message.channel:
+			server.Send(&pb.MessageResponse{Id: message.id, Type: "stdout", Content: msg})
+			message.id++
+		case msg := <-ms.messageBus:
+			msg.Id = message.id
+			server.Send(msg)
+			message.id++
 		case <-server.Context().Done():
 			idx := slices.Index(ms.forwardChannels, message)
 			if idx >= 0 {
 				ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx)
 			}
-			fmt.Printf("取消注册客户端[%d]的消息流监听请求\n", client.Id)
+			kPrintln(color.RedString("取消注册客户端["), color.GreenString("%d", client.Id), color.RedString("]的消息流监听请求"))
 			return nil
 		}
 	}
@@ -225,9 +246,10 @@ func (ms *ManagerServer) Message(client *pb.Client, server pb.Manager_MessageSer
 
 func (ms *ManagerServer) Lock(ctx context.Context, client *pb.Client) (e *emptypb.Empty, err error) {
 	ms.writeLock.Lock(client)
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]获取锁"))
 	select {
 	case <-ctx.Done():
-		fmt.Printf("客户端[%d]已离开排队队列，释放锁\n", client.Id)
+		kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]已离开排队队列，释放锁"))
 		ms.writeLock.Unlock(client)
 		return &emptypb.Empty{}, nil
 	default:
@@ -235,6 +257,7 @@ func (ms *ManagerServer) Lock(ctx context.Context, client *pb.Client) (e *emptyp
 	return &emptypb.Empty{}, nil
 }
 func (ms *ManagerServer) Unlock(ctx context.Context, client *pb.Client) (e *emptypb.Empty, err error) {
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]主动释放锁"))
 	ms.writeLock.Unlock(client)
 	return &emptypb.Empty{}, nil
 }
@@ -247,6 +270,7 @@ func (ms *ManagerServer) Write(ctx context.Context, req *pb.WriteRequest) (e *em
 		return nil, ErrNoLockAcquired
 	}
 	ms.writeLock.Lock(req.Client)
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入:\n"), color.CyanString(req.Content))
 	ms.minecraftInstance.pty.Write([]byte(req.Content + "\n"))
 	return &emptypb.Empty{}, nil
 }
@@ -255,7 +279,7 @@ func (ms *ManagerServer) Login(ctx context.Context, req *emptypb.Empty) (c *pb.C
 	c = &pb.Client{
 		Id: ctx.Value(RPCConnInfo("id")).(uint64),
 	}
-	fmt.Printf("接受新客户端链接，分配 Id:%d\n", c.Id)
+	kPrintln(color.YellowString("接受新客户端链接，分配 Id:%s", color.GreenString("%d", c.Id)))
 	return
 }
 
@@ -279,11 +303,17 @@ func (ms *ManagerServer) Status(ctx context.Context, client *pb.Client) (c *pb.S
 	}, nil
 }
 
+func NewManagerServer() *ManagerServer {
+	return &ManagerServer{
+		messageBus: make(chan *pb.MessageResponse, 32),
+	}
+}
+
 func main() {
-	manager = &ManagerServer{}
+	manager = NewManagerServer()
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", 12345))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		os.Exit(1)
 	}
 	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: manager}))
 	pb.RegisterManagerServer(rpcServer, manager)
@@ -294,28 +324,29 @@ func main() {
 	signal.Notify(sysSignals, syscall.SIGINT, syscall.SIGTERM)
 	for {
 		<-sysSignals
-		fmt.Println("接受到 SIGTERM/SIGINT 信号，正在关闭服务器")
-		message := make(chan string, 1024)
-		manager.forwardChannels = append(manager.forwardChannels, message)
-
-		go func() {
-			for {
-				msg, ok := <-message
-				if !ok {
-					break
-				}
-				fmt.Printf("服务器日志： %s\n", msg)
-			}
-		}()
+		kPrintln(color.RedString("接受到 SIGTERM/SIGINT 信号，正在关闭服务器"))
 
 		if manager.minecraftInstance.process != nil {
+			message := &ForwardChannel{channel: make(chan string, 1024)}
+			manager.forwardChannels = append(manager.forwardChannels, message)
+
+			go func() {
+				for {
+					msg, ok := <-message.channel
+					if !ok {
+						break
+					}
+					fmt.Printf("服务器日志： %s\n", msg)
+				}
+			}()
 			manager.minecraftInstance.pty.Write([]byte("stop\n"))
+			manager.minecraftInstance.process.Process.Wait()
+			manager.minecraftInstance.pty.Close()
+
+			close(message.channel)
 		}
 
-		manager.minecraftInstance.process.Process.Wait()
-		manager.minecraftInstance.pty.Close()
-		fmt.Println("服务器关闭")
-		close(message)
+		kPrintln(color.RedString("服务器关闭"))
 		os.Exit(0)
 	}
 }
