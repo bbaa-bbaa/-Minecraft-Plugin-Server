@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	pb "cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
 	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
@@ -38,18 +38,18 @@ func kPrintln(a ...any) (n int, err error) {
 type MinecraftVistor struct {
 	process *exec.Cmd
 	pty     io.ReadWriteCloser
-	state   pb.MinecraftState
+	state   manager.MinecraftState
 }
 
 type WriteLock struct {
 	mutex        sync.Mutex
-	lockedClient *pb.Client
+	lockedClient *manager.Client
 	time         *time.Timer
 }
 
 const lockMaxTime = 10 * time.Second
 
-func (wl *WriteLock) Unlock(client *pb.Client) {
+func (wl *WriteLock) Unlock(client *manager.Client) {
 	if wl.lockedClient != nil && wl.lockedClient.Id == client.Id {
 		if wl.time != nil {
 			wl.time.Stop()
@@ -60,7 +60,7 @@ func (wl *WriteLock) Unlock(client *pb.Client) {
 	}
 }
 
-func (wl *WriteLock) Lock(client *pb.Client) {
+func (wl *WriteLock) Lock(client *manager.Client) {
 	if wl.lockedClient != nil && client.Id == wl.lockedClient.Id {
 		wl.time.Reset(lockMaxTime)
 		return
@@ -78,13 +78,13 @@ type ForwardChannel struct {
 	id      uint64
 }
 type ManagerServer struct {
-	pb.UnimplementedManagerServer
+	manager.UnimplementedManagerServer
 
 	minecraftInstance MinecraftVistor
 	forwardWorker     bool
 	forwardChannels   []*ForwardChannel
 	writeLock         WriteLock
-	messageBus        chan *pb.MessageResponse
+	messageBus        chan *manager.MessageResponse
 }
 
 var (
@@ -108,7 +108,7 @@ func (h *RPCHandler) HandleConn(c context.Context, s stats.ConnStats) {
 	case *stats.ConnEnd:
 		clientId := c.Value(RPCConnInfo("id")).(uint64)
 		kPrintln(color.RedString("客户端 Id:"), color.GreenString("%d ", clientId), color.RedString("断开连接"))
-		h.managerServer.writeLock.Unlock(&pb.Client{Id: clientId})
+		h.managerServer.writeLock.Unlock(&manager.Client{Id: clientId})
 	}
 }
 
@@ -118,8 +118,6 @@ func (h *RPCHandler) TagRPC(ctx context.Context, s *stats.RPCTagInfo) context.Co
 
 func (h *RPCHandler) HandleRPC(context.Context, stats.RPCStats) {
 }
-
-var manager *ManagerServer
 
 type MinecraftState string
 
@@ -145,6 +143,7 @@ func (ms *ManagerServer) logForwardWorker() {
 			}
 		}
 	}
+	ms.forwardWorker = false
 }
 
 type MinecraftPty struct {
@@ -181,13 +180,21 @@ func (pty *MinecraftPty) Close() error {
 	return nil
 }
 
-func (ms *ManagerServer) Start(ctx context.Context, req *pb.StartRequest) (c *pb.StatusResponse, err error) {
-	if ms.minecraftInstance.process != nil && !ms.minecraftInstance.process.ProcessState.Exited() {
+func (ms *ManagerServer) stopDetect() {
+	if ms.minecraftInstance.process != nil {
+		ms.minecraftInstance.process.Process.Wait()
+		ms.minecraftInstance.pty.Close()
+		ms.messageBus <- &manager.MessageResponse{Type: "MinecraftStopped"}
+	}
+}
+
+func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (c *manager.StatusResponse, err error) {
+	if ms.minecraftInstance.process != nil {
 		return nil, ErrMinecraftAlreadyRunning
 	}
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.GreenString("]]: 启动服务器:"))
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]: 启动服务器: "), color.MagentaString(req.Path))
 	cmd := exec.Command(req.Path)
-	ms.minecraftInstance.process = cmd
+
 	cmd.Dir = path.Dir(req.Path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
@@ -209,42 +216,48 @@ func (ms *ManagerServer) Start(ctx context.Context, req *pb.StartRequest) (c *pb
 	if err != nil {
 		return nil, err
 	}
-
+	ms.minecraftInstance.process = cmd
 	ms.minecraftInstance.pty = mcpty
-	ms.minecraftInstance.state = pb.MinecraftState_running
+	ms.minecraftInstance.state = manager.MinecraftState_running
 	if !ms.forwardWorker {
 		go ms.logForwardWorker()
 	}
-	return &pb.StatusResponse{
+	go ms.stopDetect()
+	return &manager.StatusResponse{
 		State: ms.minecraftInstance.state,
 	}, nil
 }
 
-func (ms *ManagerServer) Message(client *pb.Client, server pb.Manager_MessageServer) error {
+func (ms *ManagerServer) Message(client *manager.Client, server manager.Manager_MessageServer) error {
 	kPrintln(color.YellowString("接受客户端["), color.GreenString("%d", client.Id), color.YellowString("]的消息流监听请求"))
 	message := &ForwardChannel{channel: make(chan string, 16384)}
 	ms.forwardChannels = append(ms.forwardChannels, message)
+forward:
 	for {
 		select {
-		case msg := <-message.channel:
-			server.Send(&pb.MessageResponse{Id: message.id, Type: "stdout", Content: msg})
+		case msg, ok := <-message.channel:
+			if !ok {
+				break forward
+			}
+			server.Send(&manager.MessageResponse{Id: message.id, Type: "stdout", Content: msg})
 			message.id++
 		case msg := <-ms.messageBus:
 			msg.Id = message.id
 			server.Send(msg)
 			message.id++
 		case <-server.Context().Done():
-			idx := slices.Index(ms.forwardChannels, message)
-			if idx >= 0 {
-				ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx)
-			}
 			kPrintln(color.RedString("取消注册客户端["), color.GreenString("%d", client.Id), color.RedString("]的消息流监听请求"))
-			return nil
+			break forward
 		}
 	}
+	idx := slices.Index(ms.forwardChannels, message)
+	if idx >= 0 {
+		ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx)
+	}
+	return nil
 }
 
-func (ms *ManagerServer) Lock(ctx context.Context, client *pb.Client) (e *emptypb.Empty, err error) {
+func (ms *ManagerServer) Lock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
 	ms.writeLock.Lock(client)
 	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]获取锁"))
 	select {
@@ -256,13 +269,13 @@ func (ms *ManagerServer) Lock(ctx context.Context, client *pb.Client) (e *emptyp
 	}
 	return &emptypb.Empty{}, nil
 }
-func (ms *ManagerServer) Unlock(ctx context.Context, client *pb.Client) (e *emptypb.Empty, err error) {
+func (ms *ManagerServer) Unlock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
 	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]主动释放锁"))
 	ms.writeLock.Unlock(client)
 	return &emptypb.Empty{}, nil
 }
 
-func (ms *ManagerServer) Write(ctx context.Context, req *pb.WriteRequest) (e *emptypb.Empty, err error) {
+func (ms *ManagerServer) Write(ctx context.Context, req *manager.WriteRequest) (e *emptypb.Empty, err error) {
 	if ms.writeLock.lockedClient == nil || req.Client == nil {
 		return nil, ErrNoLockAcquired
 	}
@@ -270,23 +283,23 @@ func (ms *ManagerServer) Write(ctx context.Context, req *pb.WriteRequest) (e *em
 		return nil, ErrNoLockAcquired
 	}
 	ms.writeLock.Lock(req.Client)
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入:\n"), color.CyanString(req.Content))
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]:"), color.CyanString(req.Content))
 	ms.minecraftInstance.pty.Write([]byte(req.Content + "\n"))
 	return &emptypb.Empty{}, nil
 }
 
-func (ms *ManagerServer) Login(ctx context.Context, req *emptypb.Empty) (c *pb.Client, err error) {
-	c = &pb.Client{
+func (ms *ManagerServer) Login(ctx context.Context, req *emptypb.Empty) (c *manager.Client, err error) {
+	c = &manager.Client{
 		Id: ctx.Value(RPCConnInfo("id")).(uint64),
 	}
 	kPrintln(color.YellowString("接受新客户端链接，分配 Id:%s", color.GreenString("%d", c.Id)))
 	return
 }
 
-func (ms *ManagerServer) Status(ctx context.Context, client *pb.Client) (c *pb.StatusResponse, err error) {
-	if ms.minecraftInstance.process == nil {
-		return &pb.StatusResponse{
-			State: pb.MinecraftState_stopped,
+func (ms *ManagerServer) Status(ctx context.Context, client *manager.Client) (c *manager.StatusResponse, err error) {
+	if ms.minecraftInstance.process == nil || ms.minecraftInstance.process.Process == nil {
+		return &manager.StatusResponse{
+			State: manager.MinecraftState_stopped,
 		}, nil
 	}
 	MinecraftProcess, err := process.NewProcess(int32(ms.minecraftInstance.process.Process.Pid))
@@ -297,26 +310,65 @@ func (ms *ManagerServer) Status(ctx context.Context, client *pb.Client) (c *pb.S
 			Usedmemory = memoryInfo.RSS
 		}
 	}
-	return &pb.StatusResponse{
+	return &manager.StatusResponse{
 		State:      ms.minecraftInstance.state,
 		Usedmemory: Usedmemory,
 	}, nil
 }
 
-func NewManagerServer() *ManagerServer {
-	return &ManagerServer{
-		messageBus: make(chan *pb.MessageResponse, 32),
+func (ms *ManagerServer) printLogWorker() {
+	message := &ForwardChannel{channel: make(chan string, 64)}
+	ms.forwardChannels = append(ms.forwardChannels, message)
+
+	go func() {
+		for {
+			msg, ok := <-message.channel
+			if !ok {
+				break
+			}
+			if ms.writeLock.lockedClient != nil {
+				kPrintln(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", ms.writeLock.lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
+			}
+		}
+	}()
+}
+
+func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *emptypb.Empty, err error) {
+	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]请求关闭服务器"))
+	message := &ForwardChannel{channel: make(chan string, 64)}
+	ms.forwardChannels = append(ms.forwardChannels, message)
+
+	go func() {
+		for {
+			msg, ok := <-message.channel
+			if !ok {
+				break
+			}
+			kPrintln(color.YellowString("服务器日志: "), color.CyanString(msg))
+		}
+	}()
+	ms.minecraftInstance.pty.Write([]byte("stop\n"))
+	ms.minecraftInstance.process.Process.Wait()
+	ms.minecraftInstance.pty.Close()
+	return nil, nil
+}
+
+func NewManagerServer() (m *ManagerServer) {
+	m = &ManagerServer{
+		messageBus: make(chan *manager.MessageResponse, 32),
 	}
+	m.printLogWorker()
+	return m
 }
 
 func main() {
-	manager = NewManagerServer()
+	managerServer := NewManagerServer()
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", 12345))
 	if err != nil {
 		os.Exit(1)
 	}
-	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: manager}))
-	pb.RegisterManagerServer(rpcServer, manager)
+	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: managerServer}))
+	manager.RegisterManagerServer(rpcServer, managerServer)
 	go func() {
 		rpcServer.Serve(listener)
 	}()
@@ -326,24 +378,10 @@ func main() {
 		<-sysSignals
 		kPrintln(color.RedString("接受到 SIGTERM/SIGINT 信号，正在关闭服务器"))
 
-		if manager.minecraftInstance.process != nil {
-			message := &ForwardChannel{channel: make(chan string, 1024)}
-			manager.forwardChannels = append(manager.forwardChannels, message)
-
-			go func() {
-				for {
-					msg, ok := <-message.channel
-					if !ok {
-						break
-					}
-					fmt.Printf("服务器日志： %s\n", msg)
-				}
-			}()
-			manager.minecraftInstance.pty.Write([]byte("stop\n"))
-			manager.minecraftInstance.process.Process.Wait()
-			manager.minecraftInstance.pty.Close()
-
-			close(message.channel)
+		if managerServer.minecraftInstance.process != nil {
+			managerServer.Stop(context.Background(), &manager.Client{
+				Id: 0,
+			})
 		}
 
 		kPrintln(color.RedString("服务器关闭"))
