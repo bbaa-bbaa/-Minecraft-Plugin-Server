@@ -7,7 +7,7 @@ import (
 )
 
 type Plugin interface {
-	Init()
+	Init(PluginManager)
 	Start()
 	Pause()
 	Name() string

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
 )
 
 type SimpleCommand struct {
@@ -19,7 +19,7 @@ func (sp *SimpleCommand) RegisterCommand(command string, commandFunc func(string
 	}
 }
 
-func (sp *SimpleCommand) Init(mpm *core.MinecraftPluginManager) {
+func (sp *SimpleCommand) Init(mpm pluginabi.PluginManager) {
 	sp.BasePlugin.Init(mpm)
 	mpm.RegisterLogProcesser(sp, sp.processCommand)
 	sp.playerCommand = regexp.MustCompile(`.*?\]:.*?<(.*?)>.*?!!(.*)`)

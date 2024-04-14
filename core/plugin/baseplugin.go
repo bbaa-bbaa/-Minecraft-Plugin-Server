@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
 	"github.com/fatih/color"
 )
 
 type BasePlugin struct {
-	mpm *core.MinecraftPluginManager
+	mpm pluginabi.PluginManager
 }
 
 type TellrawMessage struct {
@@ -22,7 +22,7 @@ func (bp *BasePlugin) Println(a ...any) (int, error) {
 	return bp.mpm.Println(color.BlueString(bp.Name()), a...)
 }
 
-func (bp *BasePlugin) Init(mpm *core.MinecraftPluginManager) {
+func (bp *BasePlugin) Init(mpm pluginabi.PluginManager) {
 	bp.mpm = mpm
 }
 
@@ -37,4 +37,12 @@ func (bp *BasePlugin) Tellraw(Target string, msg []TellrawMessage) string {
 
 func (bp *BasePlugin) Name() string {
 	return "基础插件"
+}
+
+func (bp *BasePlugin) Pause() {
+
+}
+
+func (bp *BasePlugin) Start() {
+
 }

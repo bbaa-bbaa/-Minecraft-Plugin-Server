@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
 	"github.com/fatih/color"
 	"google.golang.org/grpc"
@@ -177,7 +178,7 @@ func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (err 
 	if _, ok := mpm.plugins[pluginName]; !ok {
 		mpm.plugins[pluginName] = plugin
 		mpm.kPrintln(color.YellowString("注册并加载新插件 "), color.BlueString(pluginName))
-		plugin.Init()
+		plugin.Init(mpm)
 		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.GreenString(" 加载成功"))
 	} else {
 		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.RedString(" 已经加载，"), color.YellowString("本次加载请求忽略"))
@@ -196,7 +197,8 @@ func (mpm *MinecraftPluginManager) GetPlugin(pluginName string) pluginabi.Plugin
 }
 
 func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
-
+	mpm.plugins = make(map[string]pluginabi.Plugin)
+	mpm.RegisterPlugin(&plugin.SimpleCommand{})
 }
 
 func (mpm *MinecraftPluginManager) initClient() (err error) {
