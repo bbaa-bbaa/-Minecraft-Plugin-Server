@@ -25,14 +25,14 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func kPrintf(format string, a ...any) (n int, err error) {
+func Printf(format string, a ...any) (n int, err error) {
 
 	return fmt.Printf(color.YellowString("[")+color.RedString("GameManager")+color.YellowString("] ")+strings.TrimRight(format, "\r\n")+"\r\n", a...)
 }
 
-func kPrintln(a ...any) (n int, err error) {
+func Println(a ...any) (n int, err error) {
 
-	return kPrintf("%s", strings.TrimRight(fmt.Sprint(a...), "\n"))
+	return Printf("%s", strings.TrimRight(fmt.Sprint(a...), "\n"))
 }
 
 type MinecraftVistor struct {
@@ -63,12 +63,14 @@ func (wl *WriteLock) Unlock(client *manager.Client) {
 func (wl *WriteLock) Lock(client *manager.Client) {
 	if wl.lockedClient != nil && client.Id == wl.lockedClient.Id {
 		wl.time.Reset(lockMaxTime)
+		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]续期写入锁"))
 		return
 	}
 	wl.mutex.Lock()
+	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]获取写入锁"))
 	wl.lockedClient = client
 	wl.time = time.AfterFunc(lockMaxTime, func() {
-		kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]的写入锁因超时而被取消"))
+		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]的写入锁因超时而被取消"))
 		wl.Unlock(client)
 	})
 }
@@ -107,7 +109,7 @@ func (h *RPCHandler) HandleConn(c context.Context, s stats.ConnStats) {
 	switch s.(type) {
 	case *stats.ConnEnd:
 		clientId := c.Value(RPCConnInfo("id")).(uint64)
-		kPrintln(color.RedString("客户端 Id:"), color.GreenString("%d ", clientId), color.RedString("断开连接"))
+		Println(color.RedString("客户端 Id:"), color.GreenString("%d ", clientId), color.RedString("断开连接"))
 		h.managerServer.writeLock.Unlock(&manager.Client{Id: clientId})
 	}
 }
@@ -192,7 +194,7 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 	if ms.minecraftInstance.process != nil {
 		return nil, ErrMinecraftAlreadyRunning
 	}
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]: 启动服务器: "), color.MagentaString(req.Path))
+	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]: 启动服务器: "), color.MagentaString(req.Path))
 	cmd := exec.Command(req.Path)
 
 	cmd.Dir = path.Dir(req.Path)
@@ -229,7 +231,7 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 }
 
 func (ms *ManagerServer) Message(client *manager.Client, server manager.Manager_MessageServer) error {
-	kPrintln(color.YellowString("接受客户端["), color.GreenString("%d", client.Id), color.YellowString("]的消息流监听请求"))
+	Println(color.YellowString("接受客户端["), color.GreenString("%d", client.Id), color.YellowString("]的消息流监听请求"))
 	message := &ForwardChannel{channel: make(chan string, 16384)}
 	ms.forwardChannels = append(ms.forwardChannels, message)
 forward:
@@ -246,23 +248,22 @@ forward:
 			server.Send(msg)
 			message.id++
 		case <-server.Context().Done():
-			kPrintln(color.RedString("取消注册客户端["), color.GreenString("%d", client.Id), color.RedString("]的消息流监听请求"))
+			Println(color.RedString("取消注册客户端["), color.GreenString("%d", client.Id), color.RedString("]的消息流监听请求"))
 			break forward
 		}
 	}
 	idx := slices.Index(ms.forwardChannels, message)
 	if idx >= 0 {
-		ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx)
+		ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx+1)
 	}
 	return nil
 }
 
 func (ms *ManagerServer) Lock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
 	ms.writeLock.Lock(client)
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]获取锁"))
 	select {
 	case <-ctx.Done():
-		kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]已离开排队队列，释放锁"))
+		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]已离开排队队列，释放锁"))
 		ms.writeLock.Unlock(client)
 		return &emptypb.Empty{}, nil
 	default:
@@ -270,7 +271,7 @@ func (ms *ManagerServer) Lock(ctx context.Context, client *manager.Client) (e *e
 	return &emptypb.Empty{}, nil
 }
 func (ms *ManagerServer) Unlock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]主动释放锁"))
+	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]主动释放锁"))
 	ms.writeLock.Unlock(client)
 	return &emptypb.Empty{}, nil
 }
@@ -283,7 +284,7 @@ func (ms *ManagerServer) Write(ctx context.Context, req *manager.WriteRequest) (
 		return nil, ErrNoLockAcquired
 	}
 	ms.writeLock.Lock(req.Client)
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]:"), color.CyanString(req.Content))
+	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]:"), color.CyanString(req.Content))
 	ms.minecraftInstance.pty.Write([]byte(req.Content + "\n"))
 	return &emptypb.Empty{}, nil
 }
@@ -292,7 +293,7 @@ func (ms *ManagerServer) Login(ctx context.Context, req *emptypb.Empty) (c *mana
 	c = &manager.Client{
 		Id: ctx.Value(RPCConnInfo("id")).(uint64),
 	}
-	kPrintln(color.YellowString("接受新客户端链接，分配 Id:%s", color.GreenString("%d", c.Id)))
+	Println(color.YellowString("接受新客户端链接，分配 Id:%s", color.GreenString("%d", c.Id)))
 	return
 }
 
@@ -327,14 +328,14 @@ func (ms *ManagerServer) printLogWorker() {
 				break
 			}
 			if ms.writeLock.lockedClient != nil {
-				kPrintln(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", ms.writeLock.lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
+				Println(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", ms.writeLock.lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
 			}
 		}
 	}()
 }
 
 func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *emptypb.Empty, err error) {
-	kPrintln(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]请求关闭服务器"))
+	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]请求关闭服务器"))
 	message := &ForwardChannel{channel: make(chan string, 64)}
 	ms.forwardChannels = append(ms.forwardChannels, message)
 
@@ -344,12 +345,14 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 			if !ok {
 				break
 			}
-			kPrintln(color.YellowString("服务器日志: "), color.CyanString(msg))
+			Println(color.YellowString("服务器日志: "), color.CyanString(msg))
 		}
 	}()
+
 	ms.minecraftInstance.pty.Write([]byte("stop\n"))
 	ms.minecraftInstance.process.Process.Wait()
 	ms.minecraftInstance.pty.Close()
+	close(message.channel)
 	return nil, nil
 }
 
@@ -376,7 +379,7 @@ func main() {
 	signal.Notify(sysSignals, syscall.SIGINT, syscall.SIGTERM)
 	for {
 		<-sysSignals
-		kPrintln(color.RedString("接受到 SIGTERM/SIGINT 信号，正在关闭服务器"))
+		Println(color.RedString("接受到 SIGTERM/SIGINT 信号，正在关闭服务器"))
 
 		if managerServer.minecraftInstance.process != nil {
 			managerServer.Stop(context.Background(), &manager.Client{
@@ -384,7 +387,7 @@ func main() {
 			})
 		}
 
-		kPrintln(color.RedString("服务器关闭"))
+		Println(color.RedString("服务器关闭"))
 		os.Exit(0)
 	}
 }
