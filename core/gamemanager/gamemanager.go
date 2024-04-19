@@ -45,11 +45,14 @@ type WriteLock struct {
 	mutex        sync.Mutex
 	lockedClient *manager.Client
 	time         *time.Timer
+	clientLock   sync.RWMutex
 }
 
 const lockMaxTime = 10 * time.Second
 
 func (wl *WriteLock) Unlock(client *manager.Client) {
+	wl.clientLock.Lock()
+	defer wl.clientLock.Unlock()
 	if wl.lockedClient != nil && wl.lockedClient.Id == client.Id {
 		if wl.time != nil {
 			wl.time.Stop()
@@ -60,15 +63,23 @@ func (wl *WriteLock) Unlock(client *manager.Client) {
 	}
 }
 
-func (wl *WriteLock) Lock(client *manager.Client) {
+func (wl *WriteLock) Lock(client *manager.Client, internal bool) {
+	wl.clientLock.RLock()
 	if wl.lockedClient != nil && client.Id == wl.lockedClient.Id {
 		wl.time.Reset(lockMaxTime)
-		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]续期写入锁"))
+		if !internal {
+			Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]续期写入锁"))
+		}
+		wl.clientLock.RUnlock()
 		return
+	} else {
+		wl.clientLock.RUnlock()
 	}
 	wl.mutex.Lock()
 	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]获取写入锁"))
+	wl.clientLock.Lock()
 	wl.lockedClient = client
+	wl.clientLock.Unlock()
 	wl.time = time.AfterFunc(lockMaxTime, func() {
 		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]的写入锁因超时而被取消"))
 		wl.Unlock(client)
@@ -82,11 +93,12 @@ type ForwardChannel struct {
 type ManagerServer struct {
 	manager.UnimplementedManagerServer
 
-	minecraftInstance MinecraftVistor
-	forwardWorker     bool
-	forwardChannels   []*ForwardChannel
-	writeLock         WriteLock
-	messageBus        chan *manager.MessageResponse
+	minecraftInstance  MinecraftVistor
+	forwardWorker      bool
+	forwardChannels    []*ForwardChannel
+	forwardChannelLock sync.RWMutex
+	writeLock          WriteLock
+	messageBus         chan *manager.MessageResponse
 }
 
 var (
@@ -135,15 +147,17 @@ func (ms *ManagerServer) logForwardWorker() {
 	scanner := bufio.NewScanner(ms.minecraftInstance.pty)
 	for scanner.Scan() {
 		line := scanner.Text()
+		ms.forwardChannelLock.RLock()
 		for _, target := range ms.forwardChannels {
 			select {
 			default:
 				// 防止阻塞线程
-			//	fmt.Println("日志被丢弃!!:" + line)
+				Println(color.YellowString("客户端["), color.GreenString("%d", target.id), color.YellowString("]"), color.RedString("日志被丢弃："), color.YellowString(line))
 			case target.channel <- line:
 				// do nothing
 			}
 		}
+		ms.forwardChannelLock.RUnlock()
 	}
 	ms.forwardWorker = false
 }
@@ -180,6 +194,23 @@ func (pty *MinecraftPty) Close() error {
 		return stderrerr
 	}
 	return nil
+}
+
+func (ms *ManagerServer) RegisterForwardChannel() (channel *ForwardChannel) {
+	ms.forwardChannelLock.Lock()
+	defer ms.forwardChannelLock.Unlock()
+	channel = &ForwardChannel{channel: make(chan string, 16384)}
+	ms.forwardChannels = append(ms.forwardChannels, channel)
+	return
+}
+
+func (ms *ManagerServer) UnregisterForwardChannel(channel *ForwardChannel) {
+	ms.forwardChannelLock.Lock()
+	defer ms.forwardChannelLock.Unlock()
+	idx := slices.Index(ms.forwardChannels, channel)
+	if idx >= 0 {
+		ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx+1)
+	}
 }
 
 func (ms *ManagerServer) stopDetect() {
@@ -232,8 +263,7 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 
 func (ms *ManagerServer) Message(client *manager.Client, server manager.Manager_MessageServer) error {
 	Println(color.YellowString("接受客户端["), color.GreenString("%d", client.Id), color.YellowString("]的消息流监听请求"))
-	message := &ForwardChannel{channel: make(chan string, 16384)}
-	ms.forwardChannels = append(ms.forwardChannels, message)
+	message := ms.RegisterForwardChannel()
 forward:
 	for {
 		select {
@@ -249,44 +279,44 @@ forward:
 			message.id++
 		case <-server.Context().Done():
 			Println(color.RedString("取消注册客户端["), color.GreenString("%d", client.Id), color.RedString("]的消息流监听请求"))
+			ms.UnregisterForwardChannel(message)
 			break forward
 		}
-	}
-	idx := slices.Index(ms.forwardChannels, message)
-	if idx >= 0 {
-		ms.forwardChannels = slices.Delete(ms.forwardChannels, idx, idx+1)
 	}
 	return nil
 }
 
 func (ms *ManagerServer) Lock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
-	ms.writeLock.Lock(client)
+	ms.writeLock.Lock(client, false)
 	select {
 	case <-ctx.Done():
 		Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]已离开排队队列，释放锁"))
 		ms.writeLock.Unlock(client)
-		return &emptypb.Empty{}, nil
+		return nil, nil
 	default:
 	}
-	return &emptypb.Empty{}, nil
+	return nil, nil
 }
 func (ms *ManagerServer) Unlock(ctx context.Context, client *manager.Client) (e *emptypb.Empty, err error) {
 	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]主动释放锁"))
 	ms.writeLock.Unlock(client)
-	return &emptypb.Empty{}, nil
+	return nil, nil
 }
 
 func (ms *ManagerServer) Write(ctx context.Context, req *manager.WriteRequest) (e *emptypb.Empty, err error) {
-	if ms.writeLock.lockedClient == nil || req.Client == nil {
+	ms.writeLock.clientLock.RLock()
+	lockedClient := ms.writeLock.lockedClient
+	ms.writeLock.clientLock.RUnlock()
+	if lockedClient == nil || req.Client == nil {
 		return nil, ErrNoLockAcquired
 	}
-	if ms.writeLock.lockedClient != nil && ms.writeLock.lockedClient.Id != req.Client.Id {
+	if lockedClient.Id != req.Client.Id {
 		return nil, ErrNoLockAcquired
 	}
-	ms.writeLock.Lock(req.Client)
-	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]:"), color.CyanString(req.Content))
+	ms.writeLock.Lock(req.Client, true)
+	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]: "), color.CyanString(req.Content))
 	ms.minecraftInstance.pty.Write([]byte(req.Content + "\n"))
-	return &emptypb.Empty{}, nil
+	return nil, nil
 }
 
 func (ms *ManagerServer) Login(ctx context.Context, req *emptypb.Empty) (c *manager.Client, err error) {
@@ -318,8 +348,7 @@ func (ms *ManagerServer) Status(ctx context.Context, client *manager.Client) (c 
 }
 
 func (ms *ManagerServer) printLogWorker() {
-	message := &ForwardChannel{channel: make(chan string, 64)}
-	ms.forwardChannels = append(ms.forwardChannels, message)
+	message := ms.RegisterForwardChannel()
 
 	go func() {
 		for {
@@ -327,8 +356,11 @@ func (ms *ManagerServer) printLogWorker() {
 			if !ok {
 				break
 			}
-			if ms.writeLock.lockedClient != nil {
-				Println(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", ms.writeLock.lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
+			ms.writeLock.clientLock.RLock()
+			lockedClient := ms.writeLock.lockedClient
+			ms.writeLock.clientLock.RUnlock()
+			if lockedClient != nil {
+				Println(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
 			}
 		}
 	}()
@@ -336,8 +368,7 @@ func (ms *ManagerServer) printLogWorker() {
 
 func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *emptypb.Empty, err error) {
 	Println(color.YellowString("客户端["), color.GreenString("%d", client.Id), color.YellowString("]请求关闭服务器"))
-	message := &ForwardChannel{channel: make(chan string, 64)}
-	ms.forwardChannels = append(ms.forwardChannels, message)
+	message := ms.RegisterForwardChannel()
 
 	go func() {
 		for {
@@ -352,7 +383,9 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 	ms.minecraftInstance.pty.Write([]byte("stop\n"))
 	ms.minecraftInstance.process.Process.Wait()
 	ms.minecraftInstance.pty.Close()
+	ms.forwardChannelLock.Lock()
 	close(message.channel)
+	ms.forwardChannelLock.Unlock()
 	return nil, nil
 }
 

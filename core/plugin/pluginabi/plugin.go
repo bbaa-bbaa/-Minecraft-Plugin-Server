@@ -7,22 +7,28 @@ import (
 )
 
 type Plugin interface {
-	Init(PluginManager)
+	PluginName
+	Init(PluginManager) error
 	Start()
 	Pause()
-	Name() string
 }
 
 type PluginName interface {
 	Name() string
+	DisplayName() string
 }
 
 type PluginNameWrapper struct {
-	PluginName string
+	PluginName        string
+	PluginDisplayName string
 }
 
 func (p *PluginNameWrapper) Name() string {
 	return p.PluginName
+}
+
+func (p *PluginNameWrapper) DisplayName() string {
+	return p.PluginDisplayName
 }
 
 type PluginManager interface {

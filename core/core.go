@@ -34,6 +34,7 @@ type MinecraftPluginManager struct {
 	commandProcessor *MinecraftCommandProcessor
 	plugins          map[string]pluginabi.Plugin
 	pluginLock       sync.RWMutex
+	minecraftState   manager.MinecraftState
 }
 
 func (mpm *MinecraftPluginManager) RunCommand(cmd string) string {
@@ -156,7 +157,7 @@ func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan
 func (mpm *MinecraftPluginManager) getStatus() (status *manager.StatusResponse, err error) {
 	status, err = mpm.Status()
 	if err != nil {
-		mpm.kPrintln(color.RedString("无法获取服务器在状态: %s", err.Error()))
+		mpm.kPrintln(color.RedString("无法获取服务器状态: %s", err.Error()))
 		return nil, err
 	}
 	return status, nil
@@ -173,15 +174,23 @@ func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
 
 func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (err error) {
 	pluginName := plugin.Name()
+	pluginDisplayName := plugin.DisplayName()
 	mpm.pluginLock.Lock()
-	defer mpm.pluginLock.Unlock()
 	if _, ok := mpm.plugins[pluginName]; !ok {
 		mpm.plugins[pluginName] = plugin
-		mpm.kPrintln(color.YellowString("注册并加载新插件 "), color.BlueString(pluginName))
-		plugin.Init(mpm)
-		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.GreenString(" 加载成功"))
+		mpm.pluginLock.Unlock()
+		mpm.kPrintln(color.YellowString("注册并加载新插件 "), color.BlueString(pluginDisplayName))
+		err := plugin.Init(mpm)
+		if err != nil {
+			mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 加载失败: "), color.MagentaString(err.Error()))
+		}
+		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.GreenString(" 加载成功"))
+		if mpm.minecraftState == manager.MinecraftState_running {
+			plugin.Start()
+		}
 	} else {
-		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.RedString(" 已经加载，"), color.YellowString("本次加载请求忽略"))
+		mpm.pluginLock.Unlock()
+		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 已经加载，"), color.YellowString("本次加载请求忽略"))
 	}
 
 	return nil
@@ -196,8 +205,26 @@ func (mpm *MinecraftPluginManager) GetPlugin(pluginName string) pluginabi.Plugin
 	return nil
 }
 
+func (mpm *MinecraftPluginManager) pluginStart() {
+	mpm.pluginLock.RLock()
+	for _, plugin := range mpm.plugins {
+		plugin.Start()
+	}
+	mpm.pluginLock.RUnlock()
+}
+
+func (mpm *MinecraftPluginManager) pluginPause() {
+	mpm.pluginLock.RLock()
+	for _, plugin := range mpm.plugins {
+		plugin.Pause()
+	}
+	mpm.pluginLock.RUnlock()
+}
+
 func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
 	mpm.plugins = make(map[string]pluginabi.Plugin)
+	mpm.RegisterPlugin(&plugin.PlayerInfo{})
+	mpm.RegisterPlugin(&plugin.TeleportCore{})
 	mpm.RegisterPlugin(&plugin.SimpleCommand{})
 }
 
@@ -223,7 +250,14 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 	}
 	switch status.State {
 	case manager.MinecraftState_running:
-		mpm.kPrintln(color.GreenString("Minecraft 正在运行"))
+		mpm.kPrintln(color.GreenString("Minecraft 进程已经运行，检测并等待启动完成"))
+		minecraftStartingLog := mpm.RegisterLogProcesser(&pluginabi.PluginNameWrapper{PluginName: "Minecraft启动日志"}, func(s string) {
+			mpm.kPrintln(color.YellowString("服务器日志: "), color.CyanString(s))
+		})
+		mpm.RunCommand("testServerReady")
+		mpm.kPrintln(color.GreenString("Minecraft 启动成功"))
+		mpm.UnregisterServerMessageProcesser(minecraftStartingLog)
+		close(minecraftStartingLog)
 	case manager.MinecraftState_stopped:
 		mpm.kPrintln(color.YellowString("正在启动 Minecraft 服务器"))
 		err = mpm.StartMinecraft()
@@ -239,6 +273,9 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 		mpm.UnregisterServerMessageProcesser(minecraftStartingLog)
 		close(minecraftStartingLog)
 	}
+	mpm.minecraftState = manager.MinecraftState_running
+	mpm.kPrintln(color.YellowString("通知插件 Minecraft 启动完成"))
+	mpm.pluginStart()
 	return nil
 }
 

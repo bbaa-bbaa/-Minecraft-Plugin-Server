@@ -4,6 +4,7 @@ go 1.22.1
 
 require (
 	github.com/fatih/color v1.16.0
+	github.com/samber/lo v1.39.0
 	github.com/shirou/gopsutil/v3 v3.24.2
 	google.golang.org/grpc v1.62.1
 	google.golang.org/protobuf v1.33.0
@@ -20,6 +21,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
 	golang.org/x/net v0.22.0 // indirect
 	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
