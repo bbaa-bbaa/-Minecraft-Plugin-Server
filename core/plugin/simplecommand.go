@@ -31,6 +31,17 @@ type SimpleCommand struct {
 	lock             sync.RWMutex
 }
 
+func (sp *SimpleCommand) Init(pm pluginabi.PluginManager) (err error) {
+	err = sp.BasePlugin.Init(pm, sp)
+	if err != nil {
+		return err
+	}
+	pm.RegisterLogProcesser(sp, sp.processCommand)
+	sp.playerCommand = regexp.MustCompile(`.*?\]:(?: \[[^\]]+\])? <(.*?)>.*?!!(.*)`)
+	sp.registerCommands = make(map[string]func(string, ...string))
+	return nil
+}
+
 func (sp *SimpleCommand) RegisterCommand(context pluginabi.PluginName, command string, commandFunc func(string, ...string)) error {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
@@ -41,14 +52,6 @@ func (sp *SimpleCommand) RegisterCommand(context pluginabi.PluginName, command s
 		sp.Println(color.YellowString("插件 "), color.BlueString(context.DisplayName()), color.RedString(" 尝试注册已注册的命令: "), color.GreenString(command))
 		return fmt.Errorf("command exist")
 	}
-	return nil
-}
-
-func (sp *SimpleCommand) Init(pm pluginabi.PluginManager) error {
-	sp.BasePlugin.Init(pm, sp)
-	pm.RegisterLogProcesser(sp, sp.processCommand)
-	sp.playerCommand = regexp.MustCompile(`.*?\]:(?: \[[^\]]+\])? <(.*?)>.*?!!(.*)`)
-	sp.registerCommands = make(map[string]func(string, ...string))
 	return nil
 }
 

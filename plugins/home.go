@@ -40,8 +40,11 @@ func (hp *HomePlugin) Name() string {
 	return "HomePlugin"
 }
 
-func (hp *HomePlugin) Init(pm pluginabi.PluginManager) error {
-	hp.BasePlugin.Init(pm, hp)
+func (hp *HomePlugin) Init(pm pluginabi.PluginManager) (err error) {
+	err = hp.BasePlugin.Init(pm, hp)
+	if err != nil {
+		return err
+	}
 	hp.RegisterCommand("home", hp.home)
 	hp.RegisterCommand("sethome", hp.sethome)
 	hp.RegisterCommand("homelist", hp.homelist)

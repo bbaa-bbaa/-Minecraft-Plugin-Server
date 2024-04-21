@@ -105,11 +105,14 @@ type PlayerInfo struct {
 
 var PlayerEnterLeaveMessage = regexp.MustCompile(`(left|joined) the game`)
 
-func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) error {
-	pi.BasePlugin.Init(pm, pi)
+func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) (err error) {
+	err = pi.BasePlugin.Init(pm, pi)
+	if err != nil {
+		return err
+	}
 	pi.playerInfo = make(map[string]*MinecraftPlayerInfo)
 	pm.RegisterLogProcesser(pi, pi.playerJoinLeaveEvent)
-	err := pi.Load()
+	err = pi.Load()
 	if err != nil {
 		pi.Println(color.RedString("加载存储的玩家数据失败"))
 	}

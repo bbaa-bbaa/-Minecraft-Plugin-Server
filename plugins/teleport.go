@@ -36,9 +36,15 @@ func (tp *TeleportPlugin) Name() string {
 	return "TeleportPlugin"
 }
 
-func (tp *TeleportPlugin) Init(pm pluginabi.PluginManager) error {
-	tp.BasePlugin.Init(pm, tp)
-	tp.RegisterCommand("tp", tp.teleport)
+func (tp *TeleportPlugin) Init(pm pluginabi.PluginManager) (err error) {
+	err = tp.BasePlugin.Init(pm, tp)
+	if err != nil {
+		return err
+	}
+	err = tp.RegisterCommand("tp", tp.teleport)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

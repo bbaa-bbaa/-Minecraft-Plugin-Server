@@ -31,8 +31,11 @@ type TeleportCore struct {
 	BasePlugin
 }
 
-func (tc *TeleportCore) Init(pm pluginabi.PluginManager) error {
-	tc.BasePlugin.Init(pm, tc)
+func (tc *TeleportCore) Init(pm pluginabi.PluginManager) (err error) {
+	err = tc.BasePlugin.Init(pm, tc)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
