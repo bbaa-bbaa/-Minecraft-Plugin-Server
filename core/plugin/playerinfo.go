@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
+	"github.com/fatih/color"
 	"github.com/samber/lo"
 )
 
@@ -36,28 +37,93 @@ type MinecraftPlayerInfo struct {
 	Location     *MinecraftPosition
 	LastLocation *MinecraftPosition
 	UUID         string
-	Extra        map[string]any
+	Extra        map[string]json.RawMessage // for decode
+	extra        map[string]any
 	extraLock    sync.RWMutex
 	playerInfo   *PlayerInfo
+}
+
+/*
+func (mpi *MinecraftPlayerInfo) MarshalJSON() (data []byte, err error) {
+	type internalPlayerInfo struct {
+		Player       string
+		Location     *MinecraftPosition
+		LastLocation *MinecraftPosition
+		UUID         string
+		Extra        map[string]json.RawMessage
+	}
+	fmt.Println("Save")
+	Extra := make(map[string]json.RawMessage)
+	mpi.extraLock.RLock()
+	for key, value := range mpi.extra {
+		Extra[key], err = json.Marshal(value)
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+	}
+	mpi.extraLock.RUnlock()
+	mpi.extraLock.Lock()
+	mpi.Extra = Extra
+	mpi.extraLock.Unlock()
+	var original internalPlayerInfo = internalPlayerInfo{
+		Player:       mpi.Player,
+		Location:     mpi.Location,
+		LastLocation: mpi.LastLocation,
+		UUID:         mpi.UUID,
+		Extra:        mpi.Extra,
+	}
+	return json.Marshal(original)
+}*/
+
+func (mpi *MinecraftPlayerInfo) CommitExtra(context pluginabi.PluginName) error {
+	mpi.extraLock.Lock()
+	if extra, ok := mpi.extra[context.Name()]; ok {
+		data, err := json.Marshal(extra)
+		if err != nil {
+			mpi.extraLock.Unlock()
+			return fmt.Errorf("json marshal fail")
+		}
+		mpi.Extra[context.Name()] = data
+		mpi.extraLock.Unlock()
+	} else {
+		mpi.extraLock.Unlock()
+		return fmt.Errorf("no extra")
+	}
+	return mpi.playerInfo.Commit(mpi)
 }
 
 func (mpi *MinecraftPlayerInfo) Commit() error {
 	return mpi.playerInfo.Commit(mpi)
 }
 
-func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName) (extra any) {
+func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (extra any) {
 	mpi.extraLock.RLock()
-	defer mpi.extraLock.RUnlock()
-	if extra, ok := mpi.Extra[context.Name()]; ok {
+	if extra, ok := mpi.extra[context.Name()]; ok {
+		mpi.extraLock.RUnlock()
 		return extra
+	} else {
+		if extra, ok := mpi.Extra[context.Name()]; ok {
+			mpi.extraLock.RUnlock()
+			err := json.Unmarshal(extra, v)
+			if err != nil {
+				fmt.Println(err)
+				return nil
+			}
+			mpi.extraLock.Lock()
+			mpi.extra[context.Name()] = v
+			mpi.extraLock.Unlock()
+			return v
+		}
 	}
+	mpi.extraLock.RUnlock()
 	return nil
 }
 
 func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any) {
 	mpi.extraLock.Lock()
 	defer mpi.extraLock.Unlock()
-	mpi.Extra[context.Name()] = extra
+	mpi.extra[context.Name()] = extra
 }
 
 type PlayerInfo struct {
@@ -74,6 +140,10 @@ func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) error {
 	pi.BasePlugin.Init(pm, pi)
 	pi.playerInfo = make(map[string]*MinecraftPlayerInfo)
 	pm.RegisterLogProcesser(pi, pi.playerJoinLeaveEvent)
+	err := pi.Load()
+	if err != nil {
+		pi.Println(color.RedString("加载存储的玩家数据失败"))
+	}
 	return nil
 }
 
@@ -84,7 +154,6 @@ func (pi *PlayerInfo) playerJoinLeaveEvent(log string) {
 }
 
 func (pi *PlayerInfo) convertUUID(rawData []int32) (uuid string, err error) {
-	fmt.Println(rawData)
 	if len(rawData) != 4 {
 		return "", fmt.Errorf("parse UUID 失败")
 	}
@@ -142,7 +211,7 @@ func (pi *PlayerInfo) getPlayerPosition(player string) (position *MinecraftPosit
 	return position, err
 }
 
-func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerInfo, err error) {
+func (pi *PlayerInfo) GetPlayerInfo(player string, update bool) (playerInfo *MinecraftPlayerInfo, err error) {
 	var ok bool
 	pi.playerInfoLock.RLock()
 	if !slices.Contains(pi.playerList, player) {
@@ -151,12 +220,19 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 	}
 	if playerInfo, ok = pi.playerInfo[player]; !ok {
 		pi.playerInfoLock.RUnlock()
-		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi}
+		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, extra: make(map[string]any), Extra: make(map[string]json.RawMessage)}
 		pi.playerInfoLock.Lock()
 		pi.playerInfo[player] = playerInfo
 		pi.playerInfoLock.Unlock()
 	} else {
 		pi.playerInfoLock.RUnlock()
+		playerInfo.playerInfo = pi
+		if playerInfo.extra == nil {
+			playerInfo.extra = make(map[string]any)
+		}
+		if playerInfo.Extra == nil {
+			playerInfo.Extra = make(map[string]json.RawMessage)
+		}
 	}
 	if playerInfo.UUID == "" {
 		playerInfo.UUID, err = pi.getPlayerUUID(player)
@@ -164,9 +240,11 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 			return nil, err
 		}
 	}
-	playerInfo.Location, err = pi.getPlayerPosition(player)
-	if err != nil {
-		return nil, err
+	if update || playerInfo.Location == nil {
+		playerInfo.Location, err = pi.getPlayerPosition(player)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return playerInfo, nil
 }
@@ -212,6 +290,20 @@ func (pi *PlayerInfo) DisplayName() string {
 	return "玩家信息"
 }
 
+func (pi *PlayerInfo) Load() error {
+	pi.playerInfoLock.Lock()
+	defer pi.playerInfoLock.Unlock()
+	data, err := os.ReadFile("data/playerinfo.json")
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(data, &pi.playerInfo)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 	if mpi == nil {
 		return fmt.Errorf("无玩家信息")
@@ -221,7 +313,7 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 		pi.playerInfoLock.RUnlock()
 		return fmt.Errorf("无玩家信息")
 	}
-	saveData, err := json.Marshal(pi.playerInfo)
+	saveData, err := json.MarshalIndent(pi.playerInfo, "", "\t")
 	pi.playerInfoLock.RUnlock()
 	if err != nil {
 		return err

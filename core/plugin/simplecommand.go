@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -30,13 +31,17 @@ type SimpleCommand struct {
 	lock             sync.RWMutex
 }
 
-func (sp *SimpleCommand) RegisterCommand(context pluginabi.PluginName, command string, commandFunc func(string, ...string)) {
+func (sp *SimpleCommand) RegisterCommand(context pluginabi.PluginName, command string, commandFunc func(string, ...string)) error {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
-	sp.Println(color.YellowString("插件 "), color.BlueString(context.DisplayName()), color.YellowString(" 注册了一条新命令: "), color.GreenString(command))
 	if _, ok := sp.registerCommands[command]; !ok {
+		sp.Println(color.YellowString("插件 "), color.BlueString(context.DisplayName()), color.YellowString(" 注册了一条新命令: "), color.GreenString(command))
 		sp.registerCommands[command] = commandFunc
+	} else {
+		sp.Println(color.YellowString("插件 "), color.BlueString(context.DisplayName()), color.RedString(" 尝试注册已注册的命令: "), color.GreenString(command))
+		return fmt.Errorf("command exist")
 	}
+	return nil
 }
 
 func (sp *SimpleCommand) Init(pm pluginabi.PluginManager) error {

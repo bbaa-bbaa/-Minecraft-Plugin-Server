@@ -53,7 +53,7 @@ func (tc *TeleportCore) TeleportPlayer(src string, dst string) error {
 	return nil
 }
 
-func (tc *TeleportCore) TeleportPosition(src string, dst MinecraftPosition) error {
+func (tc *TeleportCore) TeleportPosition(src string, dst *MinecraftPosition) error {
 	tc.RunCommand(fmt.Sprintf(`execute as %s rotated as %s in %s run tp %s`, src, src, dst.Dimension, strings.Join(lo.Map(dst.Position[:], func(item float64, index int) string {
 		return fmt.Sprintf("%f", item)
 	}), " ")))
@@ -71,7 +71,7 @@ func (tc *TeleportCore) Teleport(src string, dst any) error {
 	switch dst := dst.(type) {
 	case string:
 		return tc.TeleportPlayer(src, dst)
-	case MinecraftPosition:
+	case *MinecraftPosition:
 		return tc.TeleportPosition(src, dst)
 	}
 	return nil
