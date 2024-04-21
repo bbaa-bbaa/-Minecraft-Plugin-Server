@@ -70,6 +70,3 @@ func (tp *TeleportPlugin) teleport(player string, arg ...string) {
 		tp.Tellraw(player, []tellraw.Message{{Text: err.Error(), Color: tellraw.Red}})
 	}
 }
-
-func (tp *TeleportPlugin) Start() {
-}
