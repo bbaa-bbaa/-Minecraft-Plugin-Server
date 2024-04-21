@@ -32,98 +32,67 @@ import (
 	"github.com/samber/lo"
 )
 
+type MinecraftPlayerInfo_Extra map[string]any
+
+func (extra *MinecraftPlayerInfo_Extra) UnmarshalJSON(data []byte) error {
+	var extraDecodeRaw map[string]json.RawMessage
+	loadedExtra := make(MinecraftPlayerInfo_Extra)
+	err := json.Unmarshal(data, &extraDecodeRaw)
+	if err != nil {
+		return err
+	}
+	for k, v := range extraDecodeRaw {
+		loadedExtra[k] = v
+	}
+	*extra = loadedExtra
+	return nil
+
+}
+
 type MinecraftPlayerInfo struct {
 	Player       string
 	Location     *MinecraftPosition
 	LastLocation *MinecraftPosition
 	UUID         string
-	Extra        map[string]json.RawMessage // for decode
-	extra        map[string]any
+	Extra        MinecraftPlayerInfo_Extra
 	extraLock    sync.RWMutex
 	playerInfo   *PlayerInfo
 }
 
-/*
-func (mpi *MinecraftPlayerInfo) MarshalJSON() (data []byte, err error) {
-	type internalPlayerInfo struct {
-		Player       string
-		Location     *MinecraftPosition
-		LastLocation *MinecraftPosition
-		UUID         string
-		Extra        map[string]json.RawMessage
-	}
-	fmt.Println("Save")
-	Extra := make(map[string]json.RawMessage)
-	mpi.extraLock.RLock()
-	for key, value := range mpi.extra {
-		Extra[key], err = json.Marshal(value)
-		if err != nil {
-			fmt.Println(err)
-			return nil, err
-		}
-	}
-	mpi.extraLock.RUnlock()
-	mpi.extraLock.Lock()
-	mpi.Extra = Extra
-	mpi.extraLock.Unlock()
-	var original internalPlayerInfo = internalPlayerInfo{
-		Player:       mpi.Player,
-		Location:     mpi.Location,
-		LastLocation: mpi.LastLocation,
-		UUID:         mpi.UUID,
-		Extra:        mpi.Extra,
-	}
-	return json.Marshal(original)
-}*/
-
-func (mpi *MinecraftPlayerInfo) CommitExtra(context pluginabi.PluginName) error {
-	mpi.extraLock.Lock()
-	if extra, ok := mpi.extra[context.Name()]; ok {
-		data, err := json.Marshal(extra)
-		if err != nil {
-			mpi.extraLock.Unlock()
-			return fmt.Errorf("json marshal fail")
-		}
-		mpi.Extra[context.Name()] = data
-		mpi.extraLock.Unlock()
-	} else {
-		mpi.extraLock.Unlock()
-		return fmt.Errorf("no extra")
-	}
-	return mpi.playerInfo.Commit(mpi)
-}
-
 func (mpi *MinecraftPlayerInfo) Commit() error {
+	mpi.extraLock.RLock()
+	defer mpi.extraLock.RUnlock()
 	return mpi.playerInfo.Commit(mpi)
 }
 
 func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (extra any) {
 	mpi.extraLock.RLock()
-	if extra, ok := mpi.extra[context.Name()]; ok {
+	if extra, ok := mpi.Extra[context.Name()]; ok {
 		mpi.extraLock.RUnlock()
-		return extra
-	} else {
-		if extra, ok := mpi.Extra[context.Name()]; ok {
-			mpi.extraLock.RUnlock()
+		switch extra := extra.(type) {
+		case json.RawMessage:
 			err := json.Unmarshal(extra, v)
 			if err != nil {
 				fmt.Println(err)
 				return nil
 			}
 			mpi.extraLock.Lock()
-			mpi.extra[context.Name()] = v
+			mpi.Extra[context.Name()] = v
 			mpi.extraLock.Unlock()
 			return v
+		default:
+			return extra
 		}
+	} else {
+		mpi.extraLock.RUnlock()
 	}
-	mpi.extraLock.RUnlock()
 	return nil
 }
 
 func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any) {
 	mpi.extraLock.Lock()
 	defer mpi.extraLock.Unlock()
-	mpi.extra[context.Name()] = extra
+	mpi.Extra[context.Name()] = extra
 }
 
 type PlayerInfo struct {
@@ -220,18 +189,15 @@ func (pi *PlayerInfo) GetPlayerInfo(player string, update bool) (playerInfo *Min
 	}
 	if playerInfo, ok = pi.playerInfo[player]; !ok {
 		pi.playerInfoLock.RUnlock()
-		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, extra: make(map[string]any), Extra: make(map[string]json.RawMessage)}
+		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, Extra: make(map[string]any)}
 		pi.playerInfoLock.Lock()
 		pi.playerInfo[player] = playerInfo
 		pi.playerInfoLock.Unlock()
 	} else {
 		pi.playerInfoLock.RUnlock()
 		playerInfo.playerInfo = pi
-		if playerInfo.extra == nil {
-			playerInfo.extra = make(map[string]any)
-		}
 		if playerInfo.Extra == nil {
-			playerInfo.Extra = make(map[string]json.RawMessage)
+			playerInfo.Extra = make(map[string]any)
 		}
 	}
 	if playerInfo.UUID == "" {

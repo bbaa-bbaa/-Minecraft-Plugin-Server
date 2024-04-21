@@ -59,6 +59,7 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	}
 	pi, err := hp.GetPlayerInfoCache(player)
 	if err != nil {
+		fmt.Println(pi)
 		hp.Tellraw(player, []plugin.TellrawMessage{{Text: "内部错误：无法获取玩家数据", Color: "red"}})
 		return
 	}
@@ -144,5 +145,5 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 		},
 		},
 	})
-	pi.CommitExtra(hp)
+	pi.Commit()
 }
