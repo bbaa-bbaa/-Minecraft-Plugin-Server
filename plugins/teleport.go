@@ -20,6 +20,7 @@ import (
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/tellraw"
 	"github.com/samber/lo"
 )
 
@@ -43,7 +44,7 @@ func (tp *TeleportPlugin) Init(pm pluginabi.PluginManager) error {
 
 func (tp *TeleportPlugin) teleport(player string, arg ...string) {
 	if len(arg) != 1 {
-		tp.Tellraw(player, []plugin.TellrawMessage{{Text: "未指定或指定过多目标", Color: "red"}})
+		tp.Tellraw(player, []tellraw.Message{{Text: "未指定或指定过多目标", Color: tellraw.Red}})
 		return
 	}
 	targetName := arg[0]
@@ -53,20 +54,20 @@ func (tp *TeleportPlugin) teleport(player string, arg ...string) {
 	})
 	if len(playerList) != 1 {
 		if len(playerList) == 0 {
-			tp.Tellraw(player, []plugin.TellrawMessage{{Text: "找不到目标", Color: "red"}})
+			tp.Tellraw(player, []tellraw.Message{{Text: "找不到目标", Color: tellraw.Red}})
 		} else {
-			tp.Tellraw(player, []plugin.TellrawMessage{{Text: "非唯一目标", Color: "red"}})
+			tp.Tellraw(player, []tellraw.Message{{Text: "非唯一目标", Color: tellraw.Red}})
 		}
 		return
 	}
 	go func() {
-		tp.Tellraw(playerList[0], []plugin.TellrawMessage{{Text: "2秒后 ", Color: "green", Bold: true}, {Text: player, Color: "yellow"}, {Text: " TP至你", Color: "green", Bold: true}})
-		tp.Tellraw(player, []plugin.TellrawMessage{{Text: "2秒后TP至 ", Color: "green", Bold: true}, {Text: playerList[0], Color: "yellow", Bold: true}})
+		tp.Tellraw(playerList[0], []tellraw.Message{{Text: "2秒后 ", Color: tellraw.Green, Bold: true}, {Type: tellraw.Selector, Selector: player, Color: tellraw.Yellow}, {Text: " TP至你", Color: tellraw.Green, Bold: true}})
+		tp.Tellraw(player, []tellraw.Message{{Text: "2秒后TP至 ", Color: tellraw.Green, Bold: true}, {Type: tellraw.Selector, Selector: playerList[0], Color: tellraw.Yellow, Bold: true}})
 	}()
 	time.Sleep(1500 * time.Millisecond)
 	err := tp.Teleport(player, playerList[0])
 	if err != nil {
-		tp.Tellraw(player, []plugin.TellrawMessage{{Text: err.Error(), Color: "red"}})
+		tp.Tellraw(player, []tellraw.Message{{Text: err.Error(), Color: tellraw.Red}})
 	}
 }
 

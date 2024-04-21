@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/tellraw"
 	"github.com/fatih/color"
 )
 
@@ -108,11 +109,11 @@ func (bp *BasePlugin) RunCommand(command string) string {
 	return bp.pm.RunCommand(command)
 }
 
-func (bp *BasePlugin) Tellraw(Target string, msg []TellrawMessage) string {
-	msg = append([]TellrawMessage{
-		{Text: "[", Color: "yellow", Bold: true},
-		{Text: bp.p.DisplayName(), Color: "green", Bold: true},
-		{Text: "] ", Color: "yellow", Bold: true},
+func (bp *BasePlugin) Tellraw(Target string, msg []tellraw.Message) string {
+	msg = append([]tellraw.Message{
+		{Text: "[", Color: tellraw.Yellow, Bold: true},
+		{Text: bp.p.DisplayName(), Color: tellraw.Green, Bold: true},
+		{Text: "] ", Color: tellraw.Yellow, Bold: true},
 	}, msg...)
 	jsonMsg, _ := json.Marshal(msg)
 	return bp.pm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
