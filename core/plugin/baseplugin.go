@@ -24,11 +24,12 @@ import (
 )
 
 type BasePlugin struct {
-	pm            pluginabi.PluginManager
-	p             pluginabi.Plugin
-	teleportCore  *TeleportCore
-	playerInfo    *PlayerInfo
-	simpleCommand *SimpleCommand
+	pm             pluginabi.PluginManager
+	p              pluginabi.Plugin
+	teleportCore   *TeleportCore
+	playerInfo     *PlayerInfo
+	simpleCommand  *SimpleCommand
+	scoreboardCore *ScoreboardCore
 }
 
 func (bp *BasePlugin) Println(a ...any) (int, error) {
@@ -44,9 +45,10 @@ func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) 
 	bp.p = plugin
 	ignoreErr := false
 	switch plugin.(type) {
-	case *TeleportCore, *PlayerInfo, *SimpleCommand:
+	case *TeleportCore, *PlayerInfo, *SimpleCommand, *ScoreboardCore:
 		ignoreErr = true
 	}
+
 	pi := pm.GetPlugin("PlayerInfo")
 	if pi == nil {
 		if !ignoreErr {
@@ -54,6 +56,15 @@ func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) 
 		}
 	} else {
 		bp.playerInfo = pi.(*PlayerInfo)
+	}
+
+	sc := pm.GetPlugin("ScoreboardCore")
+	if sc == nil {
+		if !ignoreErr {
+			return fmt.Errorf("no scoreboard instance")
+		}
+	} else {
+		bp.scoreboardCore = sc.(*ScoreboardCore)
 	}
 
 	tc := pm.GetPlugin("TeleportCore")
@@ -73,8 +84,48 @@ func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) 
 	} else {
 		bp.simpleCommand = sp.(*SimpleCommand)
 	}
-
 	return nil
+}
+
+func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayname ...string) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	dName := ""
+	if len(displayname) == 0 {
+		dName = name
+	} else {
+		dName = displayname[0]
+	}
+	bp.scoreboardCore.ensureScoreboard(bp.p, name, criterion, dName)
+}
+
+func (bp *BasePlugin) DisplayScoreboard(name string, slot string) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	bp.scoreboardCore.displayScoreboard(bp.p, name, slot)
+}
+
+func (bp *BasePlugin) ScoreAction(player string, name string, action string, count int64) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	bp.scoreboardCore.scoreAction(bp.p, player, name, action, count)
+}
+
+func (bp *BasePlugin) GetAllScore() (scores map[string]map[string]int64) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	return bp.scoreboardCore.getAllScore()
+}
+
+func (bp *BasePlugin) GetOneScore(player string, name string) (scores int64) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	return bp.scoreboardCore.getOneScore(bp.p, player, name)
 }
 
 func (bp *BasePlugin) RegisterCommand(command string, commandFunc func(string, ...string)) error {
@@ -84,18 +135,17 @@ func (bp *BasePlugin) RegisterCommand(command string, commandFunc func(string, .
 	return bp.simpleCommand.RegisterCommand(bp.p, command, commandFunc)
 }
 
-func (bp *BasePlugin) GetPlayerInfoCache(player string) (*MinecraftPlayerInfo, error) {
+func (bp *BasePlugin) GetPlayerInfo_Position(player string) (*MinecraftPlayerInfo, error) {
 	if bp.playerInfo == nil {
 		return nil, fmt.Errorf("no playerInfo instance")
 	}
-	return bp.playerInfo.GetPlayerInfo(player, false)
+	return bp.playerInfo.GetPlayerInfo_Position(player)
 }
-
 func (bp *BasePlugin) GetPlayerInfo(player string) (*MinecraftPlayerInfo, error) {
 	if bp.playerInfo == nil {
 		return nil, fmt.Errorf("no playerInfo instance")
 	}
-	return bp.playerInfo.GetPlayerInfo(player, true)
+	return bp.playerInfo.GetPlayerInfo(player)
 }
 
 func (bp *BasePlugin) GetPlayerList() []string {

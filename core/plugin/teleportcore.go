@@ -47,7 +47,7 @@ func (tc *TeleportCore) TeleportPlayer(src string, dst string) error {
 	}
 	if !strings.Contains(res, "Teleported") {
 		// 跨世界 TP
-		dstPi, err := tc.GetPlayerInfo(dst)
+		dstPi, err := tc.GetPlayerInfo_Position(dst)
 		if err != nil {
 			return fmt.Errorf("无法获取目标玩家信息")
 		}
@@ -65,7 +65,7 @@ func (tc *TeleportCore) TeleportPosition(src string, dst *MinecraftPosition) err
 
 func (tc *TeleportCore) Teleport(src string, dst any) error {
 	// 存储目前位置
-	pi, err := tc.GetPlayerInfo(src)
+	pi, err := tc.GetPlayerInfo_Position(src)
 	if err != nil {
 		return err
 	}

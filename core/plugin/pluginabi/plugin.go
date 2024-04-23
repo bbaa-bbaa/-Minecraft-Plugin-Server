@@ -42,17 +42,25 @@ func (p *PluginNameWrapper) Name() string {
 }
 
 func (p *PluginNameWrapper) DisplayName() string {
+	if p.PluginDisplayName == "" {
+		return p.PluginName
+	}
 	return p.PluginDisplayName
+}
+
+type GameManagerMessage struct {
+	Message        *manager.MessageResponse
+	CommandRespone bool
 }
 
 type PluginManager interface {
 	Printf(scope string, format string, a ...any) (n int, err error)
 	Println(scope string, a ...any) (n int, err error)
-	RegisterLogProcesser(context PluginName, process func(string)) (channel chan *manager.MessageResponse)
-	RegisterServerMessageProcesser() (channel chan *manager.MessageResponse)
+	RegisterLogProcesser(context PluginName, process func(logmsg string, iscommandrespone bool)) (channel chan *GameManagerMessage)
+	RegisterServerMessageProcesser(skipRegister bool) (channel chan *GameManagerMessage)
 	RegisterPlugin(plugin Plugin) (err error)
 	GetPlugin(pluginName string) Plugin
-	UnregisterServerMessageProcesser(channel chan *manager.MessageResponse)
+	UnregisterServerMessageProcesser(channel chan *GameManagerMessage)
 
 	RunCommand(cmd string) string
 

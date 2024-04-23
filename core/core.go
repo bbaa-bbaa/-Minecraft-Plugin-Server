@@ -34,7 +34,7 @@ import (
 
 type GameManagerMessageBus struct {
 	client   manager.Manager_MessageClient
-	channels []chan *manager.MessageResponse
+	channels []chan *pluginabi.GameManagerMessage
 	lock     sync.RWMutex
 }
 
@@ -106,14 +106,21 @@ func (mpm *MinecraftPluginManager) messageForwardWorker() {
 			mpm.kPrintln(color.RedString("MessageBus 关闭"))
 			break
 		}
+		coreMessage := &pluginabi.GameManagerMessage{Message: message, CommandRespone: mpm.commandProcessor.responeReceivers != nil}
 		mpm.messageBus.lock.RLock()
 		for _, channel := range mpm.messageBus.channels {
 			select {
-			case channel <- message:
+			case channel <- coreMessage:
 			default:
 			}
 		}
 		mpm.messageBus.lock.RUnlock()
+		if mpm.commandProcessor != nil {
+			select {
+			case mpm.commandProcessor.commandResponseLog <- coreMessage:
+			default:
+			}
+		}
 	}
 }
 
@@ -121,24 +128,28 @@ func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func (mpm *MinecraftPluginManager) RegisterLogProcesser(context pluginabi.PluginName, process func(string)) (channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) RegisterLogProcesser(context pluginabi.PluginName, process func(string, bool)) (channel chan *pluginabi.GameManagerMessage) {
+	return mpm.registerLogProcesser(context, process, false)
+}
+
+func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.PluginName, process func(string, bool), skipRegister bool) (channel chan *pluginabi.GameManagerMessage) {
 	var pluginName string
 	if context == nil {
 		pluginName = "anonymous"
 	} else {
-		pluginName = context.Name()
+		pluginName = context.DisplayName()
 	}
 	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.YellowString(" 注册了一个日志处理器: "), color.GreenString(GetFunctionName(process)))
-	channel = mpm.RegisterServerMessageProcesser()
+	channel = mpm.RegisterServerMessageProcesser(skipRegister)
 	go func() {
 		for msg := range channel {
-			switch msg.Type {
+			switch msg.Message.Type {
 			case "stdout":
-				process(msg.Content)
+				process(msg.Message.Content, msg.CommandRespone)
 			}
 		}
 	}()
-	return
+	return channel
 }
 
 func (mpm *MinecraftPluginManager) registerServerMessageListener() (err error) {
@@ -151,15 +162,17 @@ func (mpm *MinecraftPluginManager) registerServerMessageListener() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser() (channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser(skipRegister bool) (channel chan *pluginabi.GameManagerMessage) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
-	channel = make(chan *manager.MessageResponse, 16384)
-	mpm.messageBus.channels = append(mpm.messageBus.channels, channel)
-	return
+	channel = make(chan *pluginabi.GameManagerMessage, 16384)
+	if !skipRegister {
+		mpm.messageBus.channels = append(mpm.messageBus.channels, channel)
+	}
+	return channel
 }
 
-func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan *pluginabi.GameManagerMessage) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
 	idx := slices.Index(mpm.messageBus.channels, channel)
@@ -237,6 +250,7 @@ func (mpm *MinecraftPluginManager) pluginPause() {
 
 func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
 	mpm.plugins = make(map[string]pluginabi.Plugin)
+	mpm.RegisterPlugin(&plugin.ScoreboardCore{})
 	mpm.RegisterPlugin(&plugin.PlayerInfo{})
 	mpm.RegisterPlugin(&plugin.TeleportCore{})
 	mpm.RegisterPlugin(&plugin.SimpleCommand{})
@@ -265,7 +279,7 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 	switch status.State {
 	case manager.MinecraftState_running:
 		mpm.kPrintln(color.GreenString("Minecraft 进程已经运行，检测并等待启动完成"))
-		minecraftStartingLog := mpm.RegisterLogProcesser(&pluginabi.PluginNameWrapper{PluginName: "Minecraft启动日志"}, func(s string) {
+		minecraftStartingLog := mpm.RegisterLogProcesser(&pluginabi.PluginNameWrapper{PluginName: "Minecraft启动日志"}, func(s string, _ bool) {
 			mpm.kPrintln(color.YellowString("服务器日志: "), color.CyanString(s))
 		})
 		mpm.RunCommand("testServerReady")
@@ -279,7 +293,7 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 			return err
 		}
 		mpm.kPrintln(color.YellowString("Minecraft 启动请求发送"))
-		minecraftStartingLog := mpm.RegisterLogProcesser(&pluginabi.PluginNameWrapper{PluginName: "Minecraft启动日志"}, func(s string) {
+		minecraftStartingLog := mpm.RegisterLogProcesser(&pluginabi.PluginNameWrapper{PluginName: "Minecraft启动日志"}, func(s string, _ bool) {
 			mpm.kPrintln(color.YellowString("服务器日志: "), color.CyanString(s))
 		})
 		mpm.RunCommand("testServerReady")

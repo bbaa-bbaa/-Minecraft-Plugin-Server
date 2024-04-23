@@ -24,5 +24,6 @@ func main() {
 	minecraftManagerClient.Dial("127.0.0.1:12345")
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
+	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
 	select {}
 }

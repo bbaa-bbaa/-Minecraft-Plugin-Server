@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
 	"github.com/fatih/color"
 )
 
@@ -31,11 +32,12 @@ type MinecraftCommandRequest struct {
 }
 
 type MinecraftCommandProcessor struct {
-	managerClient    *MinecraftPluginManager
-	queue            chan *MinecraftCommandRequest
-	responeReceivers chan string
-	receiverLock     sync.RWMutex
-	index            uint64
+	commandResponseLog chan *pluginabi.GameManagerMessage
+	managerClient      *MinecraftPluginManager
+	queue              chan *MinecraftCommandRequest
+	responeReceivers   chan string
+	receiverLock       sync.RWMutex
+	index              uint64
 }
 
 var SkipWaitCommand []string = []string{"tellraw"}
@@ -63,7 +65,7 @@ func (mc *MinecraftCommandProcessor) RunCommand(command string) (response string
 	return <-resp
 }
 
-func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string) {
+func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string, _ bool) {
 	mc.receiverLock.RLock()
 	defer mc.receiverLock.RUnlock()
 	if mc.responeReceivers != nil {
@@ -133,7 +135,7 @@ func (mc *MinecraftCommandProcessor) Worker() {
 }
 
 func (mc *MinecraftCommandProcessor) Init() {
-	mc.managerClient.RegisterLogProcesser(mc, mc.commandResponeProcessor)
+	mc.commandResponseLog = mc.managerClient.registerLogProcesser(mc, mc.commandResponeProcessor, true)
 	go mc.Worker()
 }
 

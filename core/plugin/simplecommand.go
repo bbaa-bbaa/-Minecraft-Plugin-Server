@@ -55,7 +55,7 @@ func (sp *SimpleCommand) RegisterCommand(context pluginabi.PluginName, command s
 	return nil
 }
 
-func (sp *SimpleCommand) processCommand(logText string) {
+func (sp *SimpleCommand) processCommand(logText string, _ bool) {
 	cmdInfo := sp.playerCommand.FindStringSubmatch(logText)
 	if len(cmdInfo) < 3 {
 		return
@@ -65,11 +65,10 @@ func (sp *SimpleCommand) processCommand(logText string) {
 	commandPart := strings.Split(rawCommand, " ")
 	command := commandPart[0]
 	sp.lock.RLock()
-	if commandFunc, ok := sp.registerCommands[command]; ok {
-		sp.lock.RUnlock()
+	commandFunc, ok := sp.registerCommands[command]
+	sp.lock.RUnlock()
+	if ok {
 		go commandFunc(player, commandPart[1:]...)
-	} else {
-		sp.lock.RUnlock()
 	}
 }
 

@@ -67,8 +67,9 @@ func (mpi *MinecraftPlayerInfo) Commit() error {
 
 func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (extra any) {
 	mpi.extraLock.RLock()
-	if extra, ok := mpi.Extra[context.Name()]; ok {
-		mpi.extraLock.RUnlock()
+	extra, ok := mpi.Extra[context.Name()]
+	mpi.extraLock.RUnlock()
+	if ok {
 		switch extra := extra.(type) {
 		case json.RawMessage:
 			err := json.Unmarshal(extra, v)
@@ -83,8 +84,6 @@ func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (e
 		default:
 			return extra
 		}
-	} else {
-		mpi.extraLock.RUnlock()
 	}
 	return nil
 }
@@ -119,7 +118,7 @@ func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) (err error) {
 	return nil
 }
 
-func (pi *PlayerInfo) playerJoinLeaveEvent(log string) {
+func (pi *PlayerInfo) playerJoinLeaveEvent(log string, _ bool) {
 	if PlayerEnterLeaveMessage.MatchString(log) {
 		pi.updatePlayerList()
 	}
@@ -183,21 +182,33 @@ func (pi *PlayerInfo) getPlayerPosition(player string) (position *MinecraftPosit
 	return position, err
 }
 
-func (pi *PlayerInfo) GetPlayerInfo(player string, update bool) (playerInfo *MinecraftPlayerInfo, err error) {
+func (pi *PlayerInfo) GetPlayerInfo_Position(player string) (playerInfo *MinecraftPlayerInfo, err error) {
+	playerInfo, err = pi.GetPlayerInfo(player)
+	if err != nil {
+		return nil, err
+	}
+	playerInfo.Location, err = pi.getPlayerPosition(player)
+	if err != nil {
+		return nil, err
+	}
+	return playerInfo, err
+}
+
+func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerInfo, err error) {
 	var ok bool
 	pi.playerInfoLock.RLock()
 	if !slices.Contains(pi.playerList, player) {
 		pi.playerInfoLock.RUnlock()
 		return nil, fmt.Errorf("玩家不存在")
 	}
-	if playerInfo, ok = pi.playerInfo[player]; !ok {
-		pi.playerInfoLock.RUnlock()
+	playerInfo, ok = pi.playerInfo[player]
+	pi.playerInfoLock.RUnlock()
+	if !ok {
 		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, Extra: make(map[string]any)}
 		pi.playerInfoLock.Lock()
 		pi.playerInfo[player] = playerInfo
 		pi.playerInfoLock.Unlock()
 	} else {
-		pi.playerInfoLock.RUnlock()
 		playerInfo.playerInfo = pi
 		if playerInfo.Extra == nil {
 			playerInfo.Extra = make(map[string]any)
@@ -209,7 +220,7 @@ func (pi *PlayerInfo) GetPlayerInfo(player string, update bool) (playerInfo *Min
 			return nil, err
 		}
 	}
-	if update || playerInfo.Location == nil {
+	if playerInfo.Location == nil {
 		playerInfo.Location, err = pi.getPlayerPosition(player)
 		if err != nil {
 			return nil, err

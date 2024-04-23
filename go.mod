@@ -3,6 +3,7 @@ module cgit.bbaa.fun/bbaa/minecraft-plugin-server
 go 1.22.1
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/fatih/color v1.16.0
 	github.com/samber/lo v1.39.0
 	github.com/shirou/gopsutil/v3 v3.24.3

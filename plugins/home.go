@@ -63,7 +63,7 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	} else {
 		home = args[0]
 	}
-	pi, err := hp.GetPlayerInfoCache(player)
+	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
 		fmt.Println(pi)
 		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
@@ -124,7 +124,7 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 	} else {
 		home = args[0]
 	}
-	pi, err := hp.GetPlayerInfo(player)
+	pi, err := hp.GetPlayerInfo_Position(player)
 	if err != nil {
 		fmt.Println(err)
 		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
