@@ -32,29 +32,19 @@ type MinecraftCommandRequest struct {
 }
 
 type MinecraftCommandProcessor struct {
-	commandResponseLog chan *pluginabi.GameManagerMessage
-	managerClient      *MinecraftPluginManager
-	queue              chan *MinecraftCommandRequest
-	responeReceivers   chan string
-	receiverLock       sync.RWMutex
-	index              uint64
+	managerClient    *MinecraftPluginManager
+	queue            chan *MinecraftCommandRequest
+	responeReceivers chan string
+	receiverLock     sync.RWMutex
+	index            uint64
+}
+
+func (mc *MinecraftCommandProcessor) Println(a ...any) (int, error) {
+	return mc.managerClient.Println(color.MagentaString(mc.DisplayName()), a...)
 }
 
 var SkipWaitCommand []string = []string{"tellraw"}
 var WaitForRegexCommand map[string]*regexp.Regexp = map[string]*regexp.Regexp{"save-all": regexp.MustCompile("Saved"), "testServerReady": regexp.MustCompile("Unknown or incomplete command")}
-
-func (mc *MinecraftCommandProcessor) Println(a ...any) (int, error) {
-	return mc.managerClient.Println(color.MagentaString("CommandProcessor"), a...)
-}
-
-func NewCommandProcessor(client *MinecraftPluginManager) *MinecraftCommandProcessor {
-	cmd := &MinecraftCommandProcessor{
-		managerClient: client,
-		queue:         make(chan *MinecraftCommandRequest, 16384),
-	}
-	cmd.Init()
-	return cmd
-}
 
 func (mc *MinecraftCommandProcessor) RunCommand(command string) (response string) {
 	resp := make(chan string, 1)
@@ -134,9 +124,12 @@ func (mc *MinecraftCommandProcessor) Worker() {
 	}
 }
 
-func (mc *MinecraftCommandProcessor) Init() {
-	mc.commandResponseLog = mc.managerClient.registerLogProcesser(mc, mc.commandResponeProcessor, true)
+func (mc *MinecraftCommandProcessor) Init(mpm pluginabi.PluginManager) error {
+	mc.managerClient = mpm.(*MinecraftPluginManager)
+	mpm.RegisterLogProcesser(mc, mc.commandResponeProcessor)
+	mc.queue = make(chan *MinecraftCommandRequest, 16384)
 	go mc.Worker()
+	return nil
 }
 
 func (mc *MinecraftCommandProcessor) Name() string {
@@ -145,4 +138,10 @@ func (mc *MinecraftCommandProcessor) Name() string {
 
 func (mc *MinecraftCommandProcessor) DisplayName() string {
 	return "命令处理器"
+}
+
+func (mc *MinecraftCommandProcessor) Start() {
+}
+
+func (mc *MinecraftCommandProcessor) Pause() {
 }

@@ -28,7 +28,7 @@ import (
 	"github.com/fatih/color"
 )
 
-var DeathEventLog = regexp.MustCompile(`MinecraftServer.*\]: (\w+) [\w ]+.*?`)
+var DeathEventLog = regexp.MustCompile(`MinecraftServer.*\]: (\w+) [\w ]+$`)
 
 var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile("has made the advancement")}
 
@@ -86,6 +86,7 @@ func (bp *BackPlugin) deathEvent(logmsg string, iscmdrsp bool) {
 		player := logmsg[1]
 		playerList := bp.GetPlayerList()
 		if slices.Contains(playerList, player) {
+			time.Sleep(50 * time.Millisecond)
 			playerDeathData := bp.RunCommand(fmt.Sprintf("data get entity %s DeathTime", player))
 			playerDeathTime := strings.Split(playerDeathData, ":")
 			if len(playerDeathTime) != 2 {

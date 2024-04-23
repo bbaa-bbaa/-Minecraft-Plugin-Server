@@ -33,7 +33,7 @@ type BasePlugin struct {
 }
 
 func (bp *BasePlugin) Println(a ...any) (int, error) {
-	return bp.pm.Println(color.BlueString(bp.p.Name()), a...)
+	return bp.pm.Println(color.BlueString(bp.p.DisplayName()), a...)
 }
 
 func (bp *BasePlugin) Teleport(src string, dst any) error {

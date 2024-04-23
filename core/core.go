@@ -85,7 +85,7 @@ func (mpm *MinecraftPluginManager) Println(scope string, a ...any) (n int, err e
 }
 
 func (mpm *MinecraftPluginManager) kPrintln(a ...any) (n int, err error) {
-	return mpm.Println(color.MagentaString("MinecraftManager"), a...)
+	return mpm.Println(color.RedString("MinecraftManager"), a...)
 }
 
 func (mpm *MinecraftPluginManager) login() (err error) {
@@ -115,12 +115,6 @@ func (mpm *MinecraftPluginManager) messageForwardWorker() {
 			}
 		}
 		mpm.messageBus.lock.RUnlock()
-		if mpm.commandProcessor != nil {
-			select {
-			case mpm.commandProcessor.commandResponseLog <- coreMessage:
-			default:
-			}
-		}
 	}
 }
 
@@ -249,7 +243,6 @@ func (mpm *MinecraftPluginManager) pluginPause() {
 }
 
 func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
-	mpm.plugins = make(map[string]pluginabi.Plugin)
 	mpm.RegisterPlugin(&plugin.ScoreboardCore{})
 	mpm.RegisterPlugin(&plugin.PlayerInfo{})
 	mpm.RegisterPlugin(&plugin.TeleportCore{})
@@ -268,7 +261,8 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 		return err
 	}
 	mpm.kPrintln(color.YellowString("正在注册命令处理器"))
-	mpm.commandProcessor = NewCommandProcessor(mpm)
+	mpm.commandProcessor = &MinecraftCommandProcessor{}
+	mpm.RegisterPlugin(mpm.commandProcessor)
 	mpm.kPrintln(color.YellowString("正在加载内置插件"))
 	mpm.loadBulitinPlugin()
 	mpm.kPrintln(color.YellowString("正在获取服务器状态"))
@@ -307,6 +301,18 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 	return nil
 }
 
+func NewPluginManager() (pm *MinecraftPluginManager) {
+	pm = &MinecraftPluginManager{plugins: make(map[string]pluginabi.Plugin)}
+	return pm
+}
+
+func (mpm *MinecraftPluginManager) init() (err error) {
+	if mpm.plugins == nil {
+		mpm.plugins = make(map[string]pluginabi.Plugin)
+	}
+	return mpm.initClient()
+}
+
 func (mpm *MinecraftPluginManager) Dial(server string) (err error) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -319,5 +325,5 @@ func (mpm *MinecraftPluginManager) Dial(server string) (err error) {
 	mpm.client = manager.NewManagerClient(conn)
 	mpm.context = context.Background()
 
-	return mpm.initClient()
+	return mpm.init()
 }
