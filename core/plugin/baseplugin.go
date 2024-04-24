@@ -152,7 +152,7 @@ func (bp *BasePlugin) GetPlayerList() []string {
 	if bp.playerInfo == nil {
 		return nil
 	}
-	return bp.playerInfo.playerList
+	return bp.playerInfo.GetPlayerList()
 }
 
 func (bp *BasePlugin) RunCommand(command string) string {

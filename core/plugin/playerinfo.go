@@ -98,6 +98,7 @@ type PlayerInfo struct {
 	BasePlugin
 	updateTicker   *time.Ticker
 	playerList     []string
+	playerListLock sync.RWMutex
 	playerInfo     map[string]*MinecraftPlayerInfo
 	playerInfoLock sync.RWMutex
 }
@@ -229,14 +230,22 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 	return playerInfo, nil
 }
 
+func (pi *PlayerInfo) GetPlayerList() []string {
+	pi.playerListLock.RLock()
+	defer pi.playerListLock.RUnlock()
+	return pi.playerList
+}
+
 func (pi *PlayerInfo) updatePlayerList() {
 	playerlistMsg := pi.RunCommand("list")
 	playerlistSplitText := strings.SplitN(playerlistMsg, ":", 2)
 	if len(playerlistSplitText) == 2 {
 		playerList := strings.Split(strings.TrimSpace(playerlistSplitText[1]), ",")
+		pi.playerListLock.Lock()
 		pi.playerList = lo.Map(playerList, func(players string, index int) string {
 			return strings.TrimSpace(players)
 		})
+		pi.playerListLock.Unlock()
 	}
 }
 

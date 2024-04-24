@@ -166,8 +166,9 @@ func (ms *ManagerServer) logForwardWorker() {
 	scanner := bufio.NewScanner(ms.minecraftInstance.pty)
 	for scanner.Scan() {
 		line := scanner.Text()
-		//	ms.writeLock.clientLock.RLock()
+		ms.writeLock.clientLock.RLock()
 		locked := ms.writeLock.lockedClient != nil
+		ms.writeLock.clientLock.RUnlock()
 		ms.forwardChannelLock.RLock()
 		for _, target := range ms.forwardChannels {
 			select {
