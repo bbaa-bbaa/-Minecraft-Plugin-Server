@@ -31,6 +31,7 @@ message MessageResponse {
   uint64 id = 1 ;
   string type = 2;
   string content = 3;
+  bool locked = 4;
 }
 
 message StartRequest {

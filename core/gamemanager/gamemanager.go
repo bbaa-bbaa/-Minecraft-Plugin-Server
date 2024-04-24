@@ -100,8 +100,13 @@ func (wl *WriteLock) Lock(client *manager.Client, internal bool) {
 	})
 }
 
+type ForwardChannelMessage struct {
+	message string
+	locked  bool
+}
+
 type ForwardChannel struct {
-	channel chan string
+	channel chan *ForwardChannelMessage
 	id      uint64
 }
 type ManagerServer struct {
@@ -161,13 +166,15 @@ func (ms *ManagerServer) logForwardWorker() {
 	scanner := bufio.NewScanner(ms.minecraftInstance.pty)
 	for scanner.Scan() {
 		line := scanner.Text()
+		//	ms.writeLock.clientLock.RLock()
+		locked := ms.writeLock.lockedClient != nil
 		ms.forwardChannelLock.RLock()
 		for _, target := range ms.forwardChannels {
 			select {
 			default:
 				// 防止阻塞线程
 				Println(color.YellowString("客户端["), color.GreenString("%d", target.id), color.YellowString("]"), color.RedString("日志被丢弃："), color.YellowString(line))
-			case target.channel <- line:
+			case target.channel <- &ForwardChannelMessage{message: line, locked: locked}:
 				// do nothing
 			}
 		}
@@ -213,7 +220,7 @@ func (pty *MinecraftPty) Close() error {
 func (ms *ManagerServer) RegisterForwardChannel() (channel *ForwardChannel) {
 	ms.forwardChannelLock.Lock()
 	defer ms.forwardChannelLock.Unlock()
-	channel = &ForwardChannel{channel: make(chan string, 16384)}
+	channel = &ForwardChannel{channel: make(chan *ForwardChannelMessage, 16384)}
 	ms.forwardChannels = append(ms.forwardChannels, channel)
 	return
 }
@@ -285,7 +292,7 @@ forward:
 			if !ok {
 				break forward
 			}
-			server.Send(&manager.MessageResponse{Id: message.id, Type: "stdout", Content: msg})
+			server.Send(&manager.MessageResponse{Id: message.id, Type: "stdout", Content: msg.message, Locked: msg.locked})
 			message.id++
 		case msg := <-ms.messageBus:
 			msg.Id = message.id
@@ -374,7 +381,7 @@ func (ms *ManagerServer) printLogWorker() {
 			lockedClient := ms.writeLock.lockedClient
 			ms.writeLock.clientLock.RUnlock()
 			if lockedClient != nil {
-				Println(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", lockedClient.Id), color.YellowString("]: "), color.CyanString(msg))
+				Println(color.YellowString("服务器日志[Locked Client: "), color.GreenString("%d", lockedClient.Id), color.YellowString("]: "), color.CyanString(msg.message))
 			}
 		}
 	}()
@@ -390,7 +397,7 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 			if !ok {
 				break
 			}
-			Println(color.YellowString("服务器日志: "), color.CyanString(msg))
+			Println(color.YellowString("服务器日志: "), color.CyanString(msg.message))
 		}
 	}()
 

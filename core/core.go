@@ -34,7 +34,7 @@ import (
 
 type GameManagerMessageBus struct {
 	client   manager.Manager_MessageClient
-	channels []chan *pluginabi.GameManagerMessage
+	channels []chan *manager.MessageResponse
 	lock     sync.RWMutex
 }
 
@@ -106,11 +106,10 @@ func (mpm *MinecraftPluginManager) messageForwardWorker() {
 			mpm.kPrintln(color.RedString("MessageBus 关闭"))
 			break
 		}
-		coreMessage := &pluginabi.GameManagerMessage{Message: message, CommandRespone: mpm.commandProcessor.responeReceivers != nil}
 		mpm.messageBus.lock.RLock()
 		for _, channel := range mpm.messageBus.channels {
 			select {
-			case channel <- coreMessage:
+			case channel <- message:
 			default:
 			}
 		}
@@ -122,11 +121,11 @@ func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func (mpm *MinecraftPluginManager) RegisterLogProcesser(context pluginabi.PluginName, process func(string, bool)) (channel chan *pluginabi.GameManagerMessage) {
+func (mpm *MinecraftPluginManager) RegisterLogProcesser(context pluginabi.PluginName, process func(string, bool)) (channel chan *manager.MessageResponse) {
 	return mpm.registerLogProcesser(context, process, false)
 }
 
-func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.PluginName, process func(string, bool), skipRegister bool) (channel chan *pluginabi.GameManagerMessage) {
+func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.PluginName, process func(string, bool), skipRegister bool) (channel chan *manager.MessageResponse) {
 	var pluginName string
 	if context == nil {
 		pluginName = "anonymous"
@@ -137,9 +136,9 @@ func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.Plugin
 	channel = mpm.RegisterServerMessageProcesser(skipRegister)
 	go func() {
 		for msg := range channel {
-			switch msg.Message.Type {
+			switch msg.Type {
 			case "stdout":
-				process(msg.Message.Content, msg.CommandRespone)
+				process(msg.Content, msg.Locked)
 			}
 		}
 	}()
@@ -156,17 +155,17 @@ func (mpm *MinecraftPluginManager) registerServerMessageListener() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser(skipRegister bool) (channel chan *pluginabi.GameManagerMessage) {
+func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser(skipRegister bool) (channel chan *manager.MessageResponse) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
-	channel = make(chan *pluginabi.GameManagerMessage, 16384)
+	channel = make(chan *manager.MessageResponse, 16384)
 	if !skipRegister {
 		mpm.messageBus.channels = append(mpm.messageBus.channels, channel)
 	}
 	return channel
 }
 
-func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan *pluginabi.GameManagerMessage) {
+func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan *manager.MessageResponse) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
 	idx := slices.Index(mpm.messageBus.channels, channel)
