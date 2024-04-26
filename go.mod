@@ -1,4 +1,4 @@
-module cgit.bbaa.fun/bbaa/minecraft-plugin-server
+module cgit.bbaa.fun/bbaa/minecraft-plugin-daemon
 
 go 1.22.1
 

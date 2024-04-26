@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/samber/lo"
 )
 

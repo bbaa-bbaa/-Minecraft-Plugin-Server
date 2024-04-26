@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/tellraw"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/samber/lo"
 )
 

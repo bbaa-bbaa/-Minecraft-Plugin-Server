@@ -15,8 +15,8 @@
 package main
 
 import (
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/plugins"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
 func main() {

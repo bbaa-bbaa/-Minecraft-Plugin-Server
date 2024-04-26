@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/cespare/xxhash/v2"
 	"github.com/fatih/color"
 	"github.com/samber/lo"

@@ -15,7 +15,7 @@
 package pluginabi
 
 import (
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )

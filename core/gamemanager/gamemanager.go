@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-server/core/manager"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
 	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"

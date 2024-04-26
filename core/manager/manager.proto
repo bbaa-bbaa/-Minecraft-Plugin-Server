@@ -14,7 +14,7 @@
 
 syntax = "proto3";
 import "google/protobuf/empty.proto";
-option go_package = "cgit.bbaa.fun/bbaa/minecraft-plugin-server/manager";
+option go_package = "cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/manager";
 
 enum MinecraftState {
   stopped = 0;
