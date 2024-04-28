@@ -25,5 +25,6 @@ func main() {
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
+	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{})
 	select {}
 }

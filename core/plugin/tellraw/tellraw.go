@@ -63,9 +63,17 @@ type Message struct {
 	ClickEvent    *ClickEvent `json:"clickEvent,omitempty"`
 }
 
+type HoverEvent_Action string
+
+var (
+	HoverEvent_Show_Text   HoverEvent_Action = "show_text"
+	HoverEvent_Show_Item   HoverEvent_Action = "show_item"
+	HoverEvent_Show_Entity HoverEvent_Action = "show_entity"
+)
+
 type HoverEvent struct {
-	Action   string `json:"action"`
-	Contents any    `json:"contents"`
+	Action   HoverEvent_Action `json:"action"`
+	Contents any               `json:"contents"`
 }
 
 type HoverEvent_Item struct {

@@ -43,8 +43,10 @@ func (mc *MinecraftCommandProcessor) Println(a ...any) (int, error) {
 	return mc.managerClient.Println(color.MagentaString(mc.DisplayName()), a...)
 }
 
+var UnknownCommand = regexp.MustCompile("Unknown or incomplete command")
+
 var SkipWaitCommand []string = []string{"tellraw"}
-var WaitForRegexCommand map[string]*regexp.Regexp = map[string]*regexp.Regexp{"save-all": regexp.MustCompile("Saved"), "testServerReady": regexp.MustCompile("Unknown or incomplete command")}
+var WaitForRegexCommand map[string]*regexp.Regexp = map[string]*regexp.Regexp{"save-all": regexp.MustCompile("Saved"), "testServerReady": UnknownCommand}
 
 func (mc *MinecraftCommandProcessor) RunCommand(command string) (response string) {
 	resp := make(chan string, 1)
@@ -78,7 +80,7 @@ func (mc *MinecraftCommandProcessor) Worker() {
 		mc.receiverLock.Unlock()
 		cmd.command = strings.TrimLeft(cmd.command, "/")
 		command := strings.Split(cmd.command, " ")[0]
-		mc.Println(color.YellowString("正在执行命令["), color.CyanString("%d", mc.index), color.YellowString("]: "), color.BlueString(cmd.command), color.YellowString(" 队列中剩余: "), color.RedString("%d", len(mc.queue)))
+		mc.Println(color.YellowString("正在执行命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 队列中剩余: "), color.RedString("%d", len(mc.queue)))
 		mc.managerClient.Write(&manager.WriteRequest{Id: mc.index, Content: cmd.command})
 		if slices.Index(SkipWaitCommand, command) >= 0 {
 			cmd.response <- ""
@@ -101,10 +103,10 @@ func (mc *MinecraftCommandProcessor) Worker() {
 				if len(match) == 2 {
 					commandBuffer = append(commandBuffer, match[1])
 					if waitRegex == nil {
-						mc.Println(color.YellowString("将命令["), color.CyanString("%d", mc.index), color.YellowString("]: "), color.BlueString(cmd.command), color.YellowString(" 的输出储存为:"), color.YellowString(match[1]))
+						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 					}
 					if waitRegex != nil && waitRegex.MatchString(match[1]) {
-						mc.Println(color.YellowString("将命令["), color.CyanString("%d", mc.index), color.YellowString("]: "), color.BlueString(cmd.command), color.YellowString(" 的输出储存为:"), color.YellowString(match[1]))
+						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 						break cmdReceiver
 					}
 				}

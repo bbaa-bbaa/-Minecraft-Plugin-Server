@@ -360,7 +360,16 @@ func (ms *ManagerServer) Status(ctx context.Context, client *manager.Client) (c 
 	if err == nil {
 		memoryInfo, err := MinecraftProcess.MemoryInfo()
 		if err == nil {
-			Usedmemory = memoryInfo.RSS
+			Usedmemory += memoryInfo.RSS
+		}
+		children, err := MinecraftProcess.Children()
+		if err == nil {
+			for _, p := range children {
+				memoryInfo, err = p.MemoryInfo()
+				if err == nil {
+					Usedmemory += memoryInfo.RSS
+				}
+			}
 		}
 	}
 	return &manager.StatusResponse{
