@@ -15,12 +15,17 @@
 package main
 
 import (
+	"flag"
+
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
+var StartScript = flag.String("script", "", "start")
+
 func main() {
-	minecraftManagerClient := &core.MinecraftPluginManager{StartScript: "/home/bbaa/Minecraft/TestNeoforgeServer/run.sh"}
+	flag.Parse()
+	minecraftManagerClient := &core.MinecraftPluginManager{StartScript: *StartScript}
 	minecraftManagerClient.Dial("127.0.0.1:12345")
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})

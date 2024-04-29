@@ -169,6 +169,13 @@ func (bp *BasePlugin) Tellraw(Target string, msg []tellraw.Message) string {
 	return bp.pm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
 }
 
+func (bp *BasePlugin) GetWorldName(namespace_id string) string {
+	if name, ok := worldName[namespace_id]; ok {
+		return name
+	}
+	return namespace_id
+}
+
 func (bp *BasePlugin) Name() string {
 	return "BasePlugin"
 }

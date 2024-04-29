@@ -120,6 +120,7 @@ func (mc *MinecraftCommandProcessor) Worker() {
 			}
 		}
 		renewLockTicker.Stop()
+		endCommandTimer.Stop()
 		cmd.response <- strings.Join(commandBuffer, "\n")
 		mc.managerClient.Unlock()
 		mc.index++

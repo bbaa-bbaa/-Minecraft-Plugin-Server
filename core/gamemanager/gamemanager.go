@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -185,16 +186,26 @@ func (ms *ManagerServer) logForwardWorker() {
 }
 
 type MinecraftPty struct {
+	Stdin     io.WriteCloser
+	Stdout    io.ReadCloser
+	Stderr    io.ReadCloser
 	stdin     io.WriteCloser
-	stdout    io.ReadCloser
-	stderr    io.ReadCloser
+	stdout    io.Reader
+	stderr    io.Reader
 	multiRead io.Reader
 }
 
-func (pty *MinecraftPty) Read(p []byte) (int, error) {
+func (pty *MinecraftPty) Init() {
+	pty.stdout = pty.readerWrapper(pty.Stdout)
+	pty.stderr = pty.readerWrapper(pty.Stderr)
+	pty.stdin = pty.Stdin
 	if pty.multiRead == nil {
 		pty.multiRead = io.MultiReader(pty.stdout, pty.stderr)
 	}
+
+}
+
+func (pty *MinecraftPty) Read(p []byte) (int, error) {
 	return pty.multiRead.Read(p)
 }
 
@@ -203,15 +214,19 @@ func (pty *MinecraftPty) Write(p []byte) (int, error) {
 }
 
 func (pty *MinecraftPty) Close() error {
-	stdinerr := pty.stdin.Close()
+	stdinerr := pty.Stdin.Close()
 	if stdinerr != nil {
 		return stdinerr
 	}
-	stdouterr := pty.stdout.Close()
+	stdinerr = pty.stdin.Close()
+	if stdinerr != nil {
+		return stdinerr
+	}
+	stdouterr := pty.Stdout.Close()
 	if stdouterr != nil {
 		return stdouterr
 	}
-	stderrerr := pty.stderr.Close()
+	stderrerr := pty.Stderr.Close()
 	if stderrerr != nil {
 		return stderrerr
 	}
@@ -248,12 +263,11 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 		return nil, ErrMinecraftAlreadyRunning
 	}
 	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]: 启动服务器: "), color.MagentaString(req.Path))
-	cmd := exec.Command(req.Path)
+	cmd := exec.Command(filepath.Clean(req.Path))
 
-	cmd.Dir = path.Dir(req.Path)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	cmd.Dir = filepath.Dir(filepath.Clean(req.Path))
+	fmt.Println(cmd.Dir, path.Clean(req.Path))
+	cmd.SysProcAttr = MinecraftProcess_SysProcAttr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -266,7 +280,8 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 	if err != nil {
 		return nil, err
 	}
-	mcpty := &MinecraftPty{stdin: stdin, stdout: stdout, stderr: stderr}
+	mcpty := &MinecraftPty{Stdin: stdin, Stdout: stdout, Stderr: stderr}
+	mcpty.Init()
 	err = cmd.Start()
 	if err != nil {
 		return nil, err

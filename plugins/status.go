@@ -249,7 +249,7 @@ func (s *StatusPlugin) status(player string, args ...string) {
 	for _, load := range minecraft_load {
 		s.Tellraw(`@a`, []tellraw.Message{
 			{Text: `世界: `, Color: tellraw.Aqua},
-			{Text: load.World, Color: tellraw.Green, Bold: true},
+			{Text: s.GetWorldName(load.World), Color: tellraw.Green, Bold: true},
 			{Text: ` TPS: `, Color: "aqua"},
 			{Text: fmt.Sprintf("%.2f", load.TPS), Color: s.msptLevel(load.MSPT)},
 			{Text: ` MSPT: `, Color: "aqua"},

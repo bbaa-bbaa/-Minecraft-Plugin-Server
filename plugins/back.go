@@ -45,9 +45,13 @@ func (bp *BackPlugin) Name() string {
 }
 
 func (bp *BackPlugin) back(player string, _ ...string) {
-	pi, err := bp.GetPlayerInfo_Position(player)
+	pi, err := bp.GetPlayerInfo(player)
 	if err != nil {
 		bp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
+		return
+	}
+	if pi.LastLocation == nil {
+		bp.Tellraw(player, []tellraw.Message{{Text: "找不到历史地点记录", Color: tellraw.Red}})
 		return
 	}
 	bp.Tellraw(player, []tellraw.Message{
@@ -56,13 +60,13 @@ func (bp *BackPlugin) back(player string, _ ...string) {
 			HoverEvent: &tellraw.HoverEvent{
 				Action: "show_text", Contents: []tellraw.Message{
 					{Text: "世界: ", Color: tellraw.Green},
-					{Text: pi.Location.Dimension, Color: tellraw.Yellow},
+					{Text: pi.LastLocation.Dimension, Color: tellraw.Yellow},
 					{Text: "\n坐标: [", Color: tellraw.Green},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[0]), Color: tellraw.Aqua},
+					{Text: fmt.Sprintf("%f", pi.LastLocation.Position[0]), Color: tellraw.Aqua},
 					{Text: ",", Color: tellraw.Yellow},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[1]), Color: tellraw.Aqua},
+					{Text: fmt.Sprintf("%f", pi.LastLocation.Position[1]), Color: tellraw.Aqua},
 					{Text: ",", Color: tellraw.Yellow},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[2]), Color: tellraw.Aqua},
+					{Text: fmt.Sprintf("%f", pi.LastLocation.Position[2]), Color: tellraw.Aqua},
 					{Text: "]", Color: tellraw.Green},
 				},
 			},
