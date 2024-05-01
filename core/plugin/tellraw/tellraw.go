@@ -47,7 +47,7 @@ var (
 )
 
 type Message struct {
-	Text          string      `json:"text"`
+	Text          string      `json:"text,omitempty"`
 	Color         Color       `json:"color,omitempty"`
 	Type          MsgType     `json:"type,omitempty"`
 	Insertion     string      `json:"insertion,omitempty"`
