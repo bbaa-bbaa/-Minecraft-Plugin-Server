@@ -52,10 +52,10 @@ type PluginManager interface {
 	Printf(scope string, format string, a ...any) (n int, err error)
 	Println(scope string, a ...any) (n int, err error)
 	RegisterLogProcesser(context PluginName, process func(logmsg string, iscommandrespone bool)) (channel chan *manager.MessageResponse)
-	RegisterServerMessageProcesser(skipRegister bool) (channel chan *manager.MessageResponse)
+	RegisterManagerMessageChannel(skipRegister bool) (channel chan *manager.MessageResponse)
 	RegisterPlugin(plugin Plugin) (err error)
 	GetPlugin(pluginName string) Plugin
-	UnregisterServerMessageProcesser(channel chan *manager.MessageResponse)
+	UnRegisterManagerMessageChannel(channel chan *manager.MessageResponse)
 
 	RunCommand(cmd string) string
 

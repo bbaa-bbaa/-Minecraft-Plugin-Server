@@ -191,7 +191,7 @@ func (s *StatusPlugin) status(player string, args ...string) {
 			Action: tellraw.HoverEvent_Show_Text,
 			Contents: lo.Flatten(lo.Map(cpu_usage, func(usage float64, index int) (m []tellraw.Message) {
 				if index != 0 {
-					m = append(m, tellraw.Message{Text: "\r\n"})
+					m = append(m, tellraw.Message{Text: "\n"})
 				}
 				usage_bar := int(math.RoundToEven(usage / 100 * 32.0))
 				m = append(m, []tellraw.Message{
@@ -291,6 +291,5 @@ func (s *StatusPlugin) Start() {
 }
 
 func (s *StatusPlugin) Pause() {
-	s.testTPSCommand()
 	s.monitorTicker.Stop()
 }

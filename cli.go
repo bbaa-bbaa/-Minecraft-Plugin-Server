@@ -16,20 +16,38 @@ package main
 
 import (
 	"flag"
+	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
-var StartScript = flag.String("script", "", "start")
+var StartScript = flag.String("script", "/home/bbaa/Minecraft/ATM9/run.sh", "start")
 
 func main() {
 	flag.Parse()
+	go func() {
+		for {
+			err := createGameManager()
+			if err != nil {
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			break
+		}
+	}()
+	select {}
+}
+
+func createGameManager() error {
 	minecraftManagerClient := &core.MinecraftPluginManager{StartScript: *StartScript}
-	minecraftManagerClient.Dial("127.0.0.1:12345")
+	err := minecraftManagerClient.Dial("127.0.0.1:12345")
+	if err != nil {
+		return err
+	}
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{})
-	select {}
+	return nil
 }

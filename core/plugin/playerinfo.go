@@ -256,15 +256,14 @@ func (pi *PlayerInfo) updatePlayerWorker() {
 }
 
 func (pi *PlayerInfo) Start() {
-	createWorker := false
 	if pi.updateTicker == nil {
-		createWorker = true
-	}
-	pi.updateTicker = time.NewTicker(60 * time.Second)
-	pi.updatePlayerList()
-	if createWorker {
+		pi.updateTicker = time.NewTicker(60 * time.Second)
 		go pi.updatePlayerWorker()
+	} else {
+		pi.updateTicker.Reset(60 * time.Second)
 	}
+
+	pi.updatePlayerList()
 }
 
 func (pi *PlayerInfo) Pause() {

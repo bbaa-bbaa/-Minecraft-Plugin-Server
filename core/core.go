@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
@@ -29,6 +30,7 @@ import (
 	"github.com/fatih/color"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -38,15 +40,41 @@ type GameManagerMessageBus struct {
 	lock     sync.RWMutex
 }
 
+type PluginManager struct {
+	started bool
+	plugin  pluginabi.Plugin
+}
+
+func (pm *PluginManager) Start() {
+	if pm.plugin != nil && !pm.started {
+		pm.started = true
+		pm.plugin.Start()
+	}
+}
+
+func (pm *PluginManager) Pause() {
+	if pm.plugin != nil && pm.started {
+		pm.started = false
+		pm.plugin.Pause()
+	}
+}
+
+var (
+	errGameServerStopped     = fmt.Errorf("minecraft game stop")
+	errGrpcChannelDisconnect = fmt.Errorf("grpc disconnected")
+)
+
 type MinecraftPluginManager struct {
+	Repl             *REPLPlugin
 	Address          string
 	StartScript      string
 	ClientInfo       *manager.Client
 	client           manager.ManagerClient
 	context          context.Context
 	messageBus       GameManagerMessageBus
+	errBus           chan error
 	commandProcessor *MinecraftCommandProcessor
-	plugins          map[string]pluginabi.Plugin
+	plugins          map[string]*PluginManager
 	pluginLock       sync.RWMutex
 	minecraftState   manager.MinecraftState
 }
@@ -55,29 +83,52 @@ func (mpm *MinecraftPluginManager) RunCommand(cmd string) string {
 	return mpm.commandProcessor.RunCommand(cmd)
 }
 func (mpm *MinecraftPluginManager) Lock(opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	return mpm.client.Lock(mpm.context, mpm.ClientInfo, opts...)
 }
 func (mpm *MinecraftPluginManager) Unlock(opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	return mpm.client.Unlock(mpm.context, mpm.ClientInfo, opts...)
 }
 func (mpm *MinecraftPluginManager) Write(wr *manager.WriteRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	wr.Client = mpm.ClientInfo
 	return mpm.client.Write(mpm.context, wr, opts...)
 }
 func (mpm *MinecraftPluginManager) Start(st *manager.StartRequest, opts ...grpc.CallOption) (*manager.StatusResponse, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	st.Client = mpm.ClientInfo
 	return mpm.client.Start(mpm.context, st, opts...)
 }
 func (mpm *MinecraftPluginManager) Stop(opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	return mpm.client.Stop(mpm.context, mpm.ClientInfo, opts...)
 }
 func (mpm *MinecraftPluginManager) Status(opts ...grpc.CallOption) (*manager.StatusResponse, error) {
+	if mpm.ClientInfo == nil {
+		return nil, errGrpcChannelDisconnect
+	}
 	return mpm.client.Status(mpm.context, mpm.ClientInfo, opts...)
 }
 
 func (mpm *MinecraftPluginManager) Printf(scope string, format string, a ...any) (n int, err error) {
-
-	return fmt.Printf(color.YellowString("[")+"%s"+color.YellowString("] ")+strings.TrimRight(format, "\r\n")+"\r\n", append([]any{scope}, a...)...)
+	if mpm.Repl != nil && mpm.Repl.terminal != nil {
+		s := fmt.Sprintf(color.YellowString("[")+"%s"+color.YellowString("] ")+strings.TrimRight(format, "\r\n")+"\r\n", append([]any{scope}, a...)...)
+		mpm.Repl.terminal.Write([]byte(s))
+	} else {
+		n, err = fmt.Printf(color.YellowString("[")+"%s"+color.YellowString("] ")+strings.TrimRight(format, "\r\n")+"\r\n", append([]any{scope}, a...)...)
+	}
+	return
 }
 
 func (mpm *MinecraftPluginManager) Println(scope string, a ...any) (n int, err error) {
@@ -88,8 +139,8 @@ func (mpm *MinecraftPluginManager) kPrintln(a ...any) (n int, err error) {
 	return mpm.Println(color.RedString("MinecraftManager"), a...)
 }
 
-func (mpm *MinecraftPluginManager) login() (err error) {
-	mpm.ClientInfo, err = mpm.client.Login(mpm.context, nil)
+func (mpm *MinecraftPluginManager) login(waitForReady bool) (err error) {
+	mpm.ClientInfo, err = mpm.client.Login(mpm.context, nil, grpc.WaitForReady(waitForReady))
 	if err != nil {
 		mpm.kPrintln(color.RedString("获取 Client ID 失败: " + err.Error()))
 		return err
@@ -104,6 +155,9 @@ func (mpm *MinecraftPluginManager) messageForwardWorker() {
 		message, err := mpm.messageBus.client.Recv()
 		if err != nil {
 			mpm.kPrintln(color.RedString("MessageBus 关闭"))
+			if mpm.errBus != nil {
+				mpm.errBus <- errGrpcChannelDisconnect
+			}
 			break
 		}
 		mpm.messageBus.lock.RLock()
@@ -133,7 +187,7 @@ func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.Plugin
 		pluginName = context.DisplayName()
 	}
 	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.YellowString(" 注册了一个日志处理器: "), color.GreenString(GetFunctionName(process)))
-	channel = mpm.RegisterServerMessageProcesser(skipRegister)
+	channel = mpm.RegisterManagerMessageChannel(skipRegister)
 	go func() {
 		for msg := range channel {
 			switch msg.Type {
@@ -145,8 +199,8 @@ func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.Plugin
 	return channel
 }
 
-func (mpm *MinecraftPluginManager) registerServerMessageListener() (err error) {
-	mpm.messageBus.client, err = mpm.client.Message(mpm.context, mpm.ClientInfo)
+func (mpm *MinecraftPluginManager) registerServerMessageListener(waitForReady bool) (err error) {
+	mpm.messageBus.client, err = mpm.client.Message(mpm.context, mpm.ClientInfo, grpc.WaitForReady(waitForReady))
 	if err != nil {
 		mpm.kPrintln(color.RedString("无法注册服务消息侦听器，请检查 Backend 是否运行: %s", err.Error()))
 		return err
@@ -155,7 +209,7 @@ func (mpm *MinecraftPluginManager) registerServerMessageListener() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser(skipRegister bool) (channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) RegisterManagerMessageChannel(skipRegister bool) (channel chan *manager.MessageResponse) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
 	channel = make(chan *manager.MessageResponse, 16384)
@@ -165,7 +219,7 @@ func (mpm *MinecraftPluginManager) RegisterServerMessageProcesser(skipRegister b
 	return channel
 }
 
-func (mpm *MinecraftPluginManager) UnregisterServerMessageProcesser(channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) UnRegisterManagerMessageChannel(channel chan *manager.MessageResponse) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
 	idx := slices.Index(mpm.messageBus.channels, channel)
@@ -197,7 +251,7 @@ func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (err 
 	pluginDisplayName := plugin.DisplayName()
 	mpm.pluginLock.Lock()
 	if _, ok := mpm.plugins[pluginName]; !ok {
-		mpm.plugins[pluginName] = plugin
+		mpm.plugins[pluginName] = &PluginManager{plugin: plugin}
 		mpm.pluginLock.Unlock()
 		mpm.kPrintln(color.YellowString("注册并加载新插件 "), color.BlueString(pluginDisplayName))
 		err := plugin.Init(mpm)
@@ -220,7 +274,7 @@ func (mpm *MinecraftPluginManager) GetPlugin(pluginName string) pluginabi.Plugin
 	mpm.pluginLock.RLock()
 	defer mpm.pluginLock.RUnlock()
 	if plugin, ok := mpm.plugins[pluginName]; ok {
-		return plugin
+		return plugin.plugin
 	}
 	return nil
 }
@@ -242,28 +296,17 @@ func (mpm *MinecraftPluginManager) pluginPause() {
 }
 
 func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
+	// repl
+	mpm.Repl = &REPLPlugin{}
+	mpm.RegisterPlugin(mpm.Repl)
+
 	mpm.RegisterPlugin(&plugin.ScoreboardCore{})
 	mpm.RegisterPlugin(&plugin.PlayerInfo{})
 	mpm.RegisterPlugin(&plugin.TeleportCore{})
 	mpm.RegisterPlugin(&plugin.SimpleCommand{})
 }
 
-func (mpm *MinecraftPluginManager) initClient() (err error) {
-	mpm.kPrintln(color.YellowString("正在登录 Manager Backend"))
-	err = mpm.login()
-	if err != nil {
-		return err
-	}
-	mpm.kPrintln(color.YellowString("正在注册 MessageBus/Stdout 转发器"))
-	err = mpm.registerServerMessageListener()
-	if err != nil {
-		return err
-	}
-	mpm.kPrintln(color.YellowString("正在注册命令处理器"))
-	mpm.commandProcessor = &MinecraftCommandProcessor{}
-	mpm.RegisterPlugin(mpm.commandProcessor)
-	mpm.kPrintln(color.YellowString("正在加载内置插件"))
-	mpm.loadBulitinPlugin()
+func (mpm *MinecraftPluginManager) startMinecraftServer() (err error) {
 	mpm.kPrintln(color.YellowString("正在获取服务器状态"))
 	status, err := mpm.getStatus()
 	if err != nil {
@@ -277,7 +320,7 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 		})
 		mpm.RunCommand("testServerReady")
 		mpm.kPrintln(color.GreenString("Minecraft 启动成功"))
-		mpm.UnregisterServerMessageProcesser(minecraftStartingLog)
+		mpm.UnRegisterManagerMessageChannel(minecraftStartingLog)
 		close(minecraftStartingLog)
 	case manager.MinecraftState_stopped:
 		mpm.kPrintln(color.YellowString("正在启动 Minecraft 服务器"))
@@ -291,7 +334,7 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 		})
 		mpm.RunCommand("testServerReady")
 		mpm.kPrintln(color.GreenString("Minecraft 启动成功"))
-		mpm.UnregisterServerMessageProcesser(minecraftStartingLog)
+		mpm.UnRegisterManagerMessageChannel(minecraftStartingLog)
 		close(minecraftStartingLog)
 	}
 	mpm.minecraftState = manager.MinecraftState_running
@@ -300,29 +343,114 @@ func (mpm *MinecraftPluginManager) initClient() (err error) {
 	return nil
 }
 
+func (mpm *MinecraftPluginManager) initPlugin() (err error) {
+	mpm.kPrintln(color.YellowString("正在注册命令处理器"))
+	mpm.commandProcessor = &MinecraftCommandProcessor{}
+	mpm.RegisterPlugin(mpm.commandProcessor)
+	mpm.kPrintln(color.YellowString("正在加载内置插件"))
+	mpm.loadBulitinPlugin()
+	return nil
+}
+
+func (mpm *MinecraftPluginManager) initClient(waitForReady bool) (err error) {
+	mpm.kPrintln(color.YellowString("正在登录 Manager Backend"))
+	err = mpm.login(waitForReady)
+	if err != nil {
+		return err
+	}
+	mpm.kPrintln(color.YellowString("正在注册 MessageBus/Stdout 转发器"))
+	err = mpm.registerServerMessageListener(waitForReady)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (mpm *MinecraftPluginManager) monitorGameStopWorker(message chan *manager.MessageResponse) {
+	for msg := range message {
+		switch msg.Type {
+		case "StateChange":
+			switch msg.Content {
+			case "GameServerStop":
+				mpm.errBus <- errGameServerStopped
+			}
+		}
+	}
+}
+
+func (mpm *MinecraftPluginManager) errorHandler() {
+	for err := range mpm.errBus {
+		switch err {
+		case errGameServerStopped:
+			mpm.pluginPause()
+		case errGrpcChannelDisconnect:
+			mpm.ClientInfo = nil
+			mpm.pluginPause()
+			go func() {
+				for {
+					err := mpm.initClient(true)
+					if err != nil {
+						time.Sleep(5 * time.Second)
+						continue
+					}
+					err = mpm.startMinecraftServer()
+					if err != nil {
+						time.Sleep(5 * time.Second)
+						continue
+					}
+					break
+				}
+			}()
+		}
+	}
+}
+func (mpm *MinecraftPluginManager) initErrorHandler() {
+	if mpm.errBus != nil {
+		return
+	}
+	mpm.errBus = make(chan error, 1)
+	go mpm.errorHandler()
+	go mpm.monitorGameStopWorker(mpm.RegisterManagerMessageChannel(false))
+}
+
+func (mpm *MinecraftPluginManager) initManager() (err error) {
+	err = mpm.initClient(false)
+	if err != nil {
+		return err
+	}
+	mpm.initErrorHandler()
+	err = mpm.initPlugin()
+	if err != nil {
+		return err
+	}
+	return mpm.startMinecraftServer()
+}
+
 func NewPluginManager() (pm *MinecraftPluginManager) {
-	pm = &MinecraftPluginManager{plugins: make(map[string]pluginabi.Plugin)}
+	pm = &MinecraftPluginManager{plugins: make(map[string]*PluginManager)}
 	return pm
 }
 
 func (mpm *MinecraftPluginManager) init() (err error) {
 	if mpm.plugins == nil {
-		mpm.plugins = make(map[string]pluginabi.Plugin)
+		mpm.plugins = make(map[string]*PluginManager)
 	}
-	return mpm.initClient()
+	mpm.context = context.Background()
+	return
 }
 
 func (mpm *MinecraftPluginManager) Dial(server string) (err error) {
-	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	mpm.init()
 	mpm.Address = server
-	conn, err := grpc.Dial(mpm.Address, opts...)
+	conn, err := grpc.NewClient(mpm.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithKeepaliveParams(keepalive.ClientParameters{
+		Time:                10 * time.Second,
+		Timeout:             5 * time.Second,
+		PermitWithoutStream: true,
+	}))
 	if err != nil {
 		mpm.kPrintln(color.RedString("无法连接上 Manager Backend，请检查 Backend 是否运行: %s", err.Error()))
 		return err
 	}
 	mpm.client = manager.NewManagerClient(conn)
-	mpm.context = context.Background()
 
-	return mpm.init()
+	return mpm.initManager()
 }

@@ -37,6 +37,7 @@ type MinecraftCommandProcessor struct {
 	responeReceivers chan string
 	receiverLock     sync.RWMutex
 	index            uint64
+	cleanSignal      chan struct{}
 }
 
 func (mc *MinecraftCommandProcessor) Println(a ...any) (int, error) {
@@ -71,9 +72,16 @@ func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string, _ b
 func (mc *MinecraftCommandProcessor) Worker() {
 	for cmd := range mc.queue {
 		var waitRegex *regexp.Regexp
-		var ok bool
+		var isWaitRegex bool
 		commandBuffer := make([]string, 0, 32)
-		mc.managerClient.Lock()
+		_, err := mc.managerClient.Lock()
+		if err != nil {
+			cmd.response <- ""
+			mc.responeReceivers = nil
+			mc.managerClient.Unlock()
+			mc.index++
+			continue
+		}
 		responseReceiver := make(chan string, 32)
 		mc.receiverLock.Lock()
 		mc.responeReceivers = responseReceiver
@@ -91,21 +99,26 @@ func (mc *MinecraftCommandProcessor) Worker() {
 		}
 		renewLockTicker := time.NewTicker(5 * time.Second)
 		endCommandTimer := time.NewTimer(100 * time.Millisecond)
-		if waitRegex, ok = WaitForRegexCommand[command]; ok {
-			endCommandTimer.C = nil
+		if waitRegex, isWaitRegex = WaitForRegexCommand[command]; isWaitRegex {
+			endCommandTimer.Stop()
 		}
 	cmdReceiver:
 		for {
 			select {
 			case line := <-responseReceiver:
-				endCommandTimer.Reset(10 * time.Millisecond)
+				if !isWaitRegex {
+					if !endCommandTimer.Stop() {
+						<-endCommandTimer.C
+					}
+					endCommandTimer.Reset(10 * time.Millisecond)
+				}
 				match := DedicatedServerMessage.FindStringSubmatch(line)
 				if len(match) == 2 {
 					commandBuffer = append(commandBuffer, match[1])
-					if waitRegex == nil {
+					if !isWaitRegex {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 					}
-					if waitRegex != nil && waitRegex.MatchString(match[1]) {
+					if isWaitRegex && waitRegex.MatchString(match[1]) {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 						break cmdReceiver
 					}
@@ -117,6 +130,13 @@ func (mc *MinecraftCommandProcessor) Worker() {
 				break cmdReceiver
 			case <-renewLockTicker.C:
 				mc.managerClient.Lock()
+			case <-mc.cleanSignal:
+				renewLockTicker.Stop()
+				endCommandTimer.Stop()
+				cmd.response <- ""
+				mc.responeReceivers = nil
+				mc.index++
+				continue
 			}
 		}
 		renewLockTicker.Stop()
@@ -131,6 +151,7 @@ func (mc *MinecraftCommandProcessor) Init(mpm pluginabi.PluginManager) error {
 	mc.managerClient = mpm.(*MinecraftPluginManager)
 	mpm.RegisterLogProcesser(mc, mc.commandResponeProcessor)
 	mc.queue = make(chan *MinecraftCommandRequest, 16384)
+	mc.cleanSignal = make(chan struct{})
 	go mc.Worker()
 	return nil
 }
@@ -147,4 +168,5 @@ func (mc *MinecraftCommandProcessor) Start() {
 }
 
 func (mc *MinecraftCommandProcessor) Pause() {
+	mc.cleanSignal <- struct{}{}
 }

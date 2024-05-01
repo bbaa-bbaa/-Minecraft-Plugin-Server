@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -36,6 +35,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -122,6 +122,7 @@ type ManagerServer struct {
 }
 
 var (
+	ErrMinecraftNotRunning     = fmt.Errorf("minecraft server isn't running")
 	ErrMinecraftAlreadyRunning = fmt.Errorf("minecraft server is already running")
 	ErrNoLockAcquired          = fmt.Errorf("no lock acquired")
 )
@@ -198,7 +199,7 @@ type MinecraftPty struct {
 func (pty *MinecraftPty) Init() {
 	pty.stdout = pty.readerWrapper(pty.Stdout)
 	pty.stderr = pty.readerWrapper(pty.Stderr)
-	pty.stdin = pty.Stdin
+	pty.stdin = pty.writerWrapper(pty.Stdin)
 	if pty.multiRead == nil {
 		pty.multiRead = io.MultiReader(pty.stdout, pty.stderr)
 	}
@@ -254,7 +255,7 @@ func (ms *ManagerServer) stopDetect() {
 	if ms.minecraftInstance.process != nil {
 		ms.minecraftInstance.process.Process.Wait()
 		ms.minecraftInstance.pty.Close()
-		ms.messageBus <- &manager.MessageResponse{Type: "MinecraftStopped"}
+		ms.messageBus <- &manager.MessageResponse{Type: "StateChange", Content: "GameServerStop"}
 	}
 }
 
@@ -266,7 +267,6 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 	cmd := exec.Command(filepath.Clean(req.Path))
 
 	cmd.Dir = filepath.Dir(filepath.Clean(req.Path))
-	fmt.Println(cmd.Dir, path.Clean(req.Path))
 	cmd.SysProcAttr = MinecraftProcess_SysProcAttr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -289,6 +289,7 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 	ms.minecraftInstance.process = cmd
 	ms.minecraftInstance.pty = mcpty
 	ms.minecraftInstance.state = manager.MinecraftState_running
+	ms.messageBus <- &manager.MessageResponse{Type: "StateChange", Content: "StartGameServer"}
 	if !ms.forwardWorker {
 		go ms.logForwardWorker()
 	}
@@ -349,6 +350,9 @@ func (ms *ManagerServer) Write(ctx context.Context, req *manager.WriteRequest) (
 	}
 	if lockedClient.Id != req.Client.Id {
 		return nil, ErrNoLockAcquired
+	}
+	if ms.minecraftInstance.state != manager.MinecraftState_running {
+		return nil, ErrMinecraftAlreadyRunning
 	}
 	ms.writeLock.Lock(req.Client, true)
 	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]: "), color.CyanString(req.Content))
@@ -444,12 +448,17 @@ func NewManagerServer() (m *ManagerServer) {
 }
 
 func main() {
+
 	managerServer := NewManagerServer()
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", 12345))
 	if err != nil {
 		os.Exit(1)
 	}
-	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: managerServer}))
+	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: managerServer}), grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionIdle: 15 * time.Second,
+		Time:              10 * time.Second,
+		Timeout:           2 * time.Second,
+	}))
 	manager.RegisterManagerServer(rpcServer, managerServer)
 	go func() {
 		rpcServer.Serve(listener)
