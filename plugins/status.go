@@ -247,16 +247,18 @@ func (s *StatusPlugin) status(player string, args ...string) {
 		return int(a.index - b.index)
 	})
 	for _, load := range minecraft_load {
-		s.Tellraw(`@a`, []tellraw.Message{
-			{Text: `世界: `, Color: tellraw.Aqua},
-			{Text: s.GetWorldName(load.World), Color: tellraw.Green, Bold: true},
-			{Text: ` TPS: `, Color: "aqua"},
-			{Text: fmt.Sprintf("%.2f", load.TPS), Color: s.msptLevel(load.MSPT)},
-			{Text: ` MSPT: `, Color: "aqua"},
-			{Text: fmt.Sprintf("%.2fms", load.MSPT), Color: s.msptLevel(load.MSPT)},
-			{Text: ` 负载: `, Color: "aqua"},
-			{Text: fmt.Sprintf(`%.2f%%`, load.MSPT/50*100), Color: s.msptLevel(load.MSPT)},
-		})
+		if load.MSPT > 1 {
+			s.Tellraw(`@a`, []tellraw.Message{
+				{Text: `世界: `, Color: tellraw.Aqua},
+				{Text: s.GetWorldName(load.World), Color: tellraw.Green, Bold: true},
+				{Text: ` TPS: `, Color: "aqua"},
+				{Text: fmt.Sprintf("%.2f", load.TPS), Color: s.msptLevel(load.MSPT)},
+				{Text: ` MSPT: `, Color: "aqua"},
+				{Text: fmt.Sprintf("%.2fms", load.MSPT), Color: s.msptLevel(load.MSPT)},
+				{Text: ` 负载: `, Color: "aqua"},
+				{Text: fmt.Sprintf(`%.2f%%`, load.MSPT/50*100), Color: s.msptLevel(load.MSPT)},
+			})
+		}
 	}
 }
 
