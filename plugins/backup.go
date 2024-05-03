@@ -16,8 +16,11 @@ package plugins
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,10 +32,11 @@ import (
 
 type BackupPlugin struct {
 	plugin.BasePlugin
-	Source     string // Minecraft world source dir
-	Dest       string // backup dest
-	backupLock sync.Mutex
-	cron       gocron.Scheduler
+	Source                 string // Minecraft world source dir
+	Dest                   string // backup dest
+	backupLock             sync.Mutex
+	cron                   gocron.Scheduler
+	backupPlayerdataTicker *time.Ticker
 }
 
 func (bp *BackupPlugin) DisplayName() string {
@@ -58,7 +62,64 @@ func (bp *BackupPlugin) SaveSize(src string) (int64, error) {
 }
 
 func (bp *BackupPlugin) MakePlayerDataBackup() {
-
+	playerdataDir := []string{"playerdata", "advancements", "stats"}
+	playerdataMtime := map[string]time.Time{}
+	backupUUID := []string{}
+	for _, subdir := range playerdataDir {
+		dir := filepath.Join(bp.Source, subdir)
+		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if d.IsDir() {
+				return nil
+			}
+			ext := filepath.Ext(path)
+			uuid := strings.TrimSuffix(filepath.Base(path), ext)
+			switch ext {
+			case ".json", ".dat":
+				fi, err := d.Info()
+				mt := fi.ModTime()
+				if err == nil {
+					if playerdataMtime[uuid].IsZero() {
+						playerdataMtime[uuid] = mt
+					} else if playerdataMtime[uuid].Before(mt) {
+						playerdataMtime[uuid] = mt
+					}
+				}
+			}
+			return nil
+		})
+	}
+	for uuid, mtime := range playerdataMtime {
+		var lastMtime time.Time
+		pi, err := bp.GetPlayerInfo(uuid)
+		if err != nil {
+			continue
+		}
+		pi.GetExtra(bp, &lastMtime)
+		if mtime.After(lastMtime) {
+			backupUUID = append(backupUUID, uuid)
+		}
+		pi.PutExtra(bp, mtime)
+	}
+	for _, subdir := range playerdataDir {
+		dir := filepath.Join(bp.Source, subdir)
+		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if d.IsDir() {
+				return nil
+			}
+			ext := filepath.Ext(path)
+			uuid := strings.TrimSuffix(filepath.Base(path), ext)
+			if !slices.Contains(backupUUID, uuid) {
+				return nil
+			}
+			switch ext {
+			case ".json", ".dat":
+				dest := filepath.Join(bp.Dest, "playerdata", uuid, playerdataMtime[uuid].Format("2006_01_02_15_04_05"), subdir)
+				os.MkdirAll(dest, 0755)
+				bp.Copy(path, dest)
+			}
+			return nil
+		})
+	}
 }
 
 func (bp *BackupPlugin) MakeBackup(comment string) {
@@ -145,8 +206,20 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 
 func (bp *BackupPlugin) Start() {
 	bp.cron.Start()
+	if bp.backupPlayerdataTicker == nil {
+		bp.backupPlayerdataTicker = time.NewTicker(60 * time.Second)
+		go func() {
+			for range bp.backupPlayerdataTicker.C {
+				bp.MakePlayerDataBackup()
+			}
+		}()
+	} else {
+		bp.backupPlayerdataTicker.Reset(60 * time.Second)
+	}
+	bp.MakePlayerDataBackup()
 }
 
 func (bp *BackupPlugin) Pause() {
 	bp.cron.StopJobs()
+	bp.backupPlayerdataTicker.Stop()
 }

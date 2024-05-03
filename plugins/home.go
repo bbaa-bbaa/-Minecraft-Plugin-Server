@@ -70,12 +70,10 @@ func (hp *HomePlugin) home(player string, args ...string) {
 		return
 	}
 	var homeList HomePlugin_HomeList
-	homeListData := pi.GetExtra(hp, &homeList)
-	if homeListData == nil {
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
 		return
-	} else {
-		homeList = *homeListData.(*HomePlugin_HomeList)
 	}
 	homeNameList := maps.Keys(homeList)
 	homeNameList = lo.Filter(homeNameList, func(item string, index int) bool {
@@ -131,12 +129,10 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 		return
 	}
 	var homeList HomePlugin_HomeList
-	homeListData := pi.GetExtra(hp, &homeList)
-	if homeListData == nil {
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
 		homeList = make(HomePlugin_HomeList)
-		pi.PutExtra(hp, &homeList)
-	} else {
-		homeList = *homeListData.(*HomePlugin_HomeList)
+		pi.PutExtra(hp, homeList)
 	}
 	homeList[home] = pi.Location
 	hp.Tellraw(player, []tellraw.Message{
@@ -176,12 +172,10 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 		return
 	}
 	var homeList HomePlugin_HomeList
-	homeListData := pi.GetExtra(hp, &homeList)
-	if homeListData == nil {
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
 		return
-	} else {
-		homeList = *homeListData.(*HomePlugin_HomeList)
 	}
 	hp.Tellraw(player, []tellraw.Message{{Text: "你拥有以下家:", Color: tellraw.Green}, {Text: "[点击可快速输入]", Color: tellraw.Light_Purple, Bold: true}})
 	if len(homeList) == 0 {
@@ -232,12 +226,10 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 		return
 	}
 	var homeList HomePlugin_HomeList
-	homeListData := pi.GetExtra(hp, &homeList)
-	if homeListData == nil {
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
 		homeList = make(HomePlugin_HomeList)
-		pi.PutExtra(hp, &homeList)
-	} else {
-		homeList = *homeListData.(*HomePlugin_HomeList)
+		pi.PutExtra(hp, homeList)
 	}
 	homeInfo, ok := homeList[home]
 	if !ok {

@@ -20,8 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +65,7 @@ func (mpi *MinecraftPlayerInfo) Commit() error {
 	return mpi.playerInfo.Commit(mpi)
 }
 
-func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (extra any) {
+func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) error {
 	mpi.extraLock.RLock()
 	extra, ok := mpi.Extra[context.Name()]
 	mpi.extraLock.RUnlock()
@@ -74,15 +74,18 @@ func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) (e
 		case json.RawMessage:
 			err := json.Unmarshal(extra, v)
 			if err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			mpi.extraLock.Lock()
 			mpi.Extra[context.Name()] = v
 			mpi.extraLock.Unlock()
-			return v
 		default:
-			return extra
+			x := reflect.ValueOf(extra)
+			if x.Kind() == reflect.Ptr {
+				reflect.ValueOf(v).Elem().Set(x.Elem())
+			} else {
+				reflect.ValueOf(v).Elem().Set(x)
+			}
 		}
 	}
 	return nil
@@ -95,8 +98,30 @@ func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any
 }
 
 type PlayerInfo_Storage struct {
-	PlayerInfo map[string]*MinecraftPlayerInfo
-	UUIDMap    map[string]string
+	PlayerInfo     map[string]*MinecraftPlayerInfo
+	playerInfoLock sync.RWMutex
+	UUIDMap        map[string]string
+	uuidMapLock    sync.RWMutex
+}
+
+func (s *PlayerInfo_Storage) Lock() {
+	s.playerInfoLock.Lock()
+	s.uuidMapLock.Lock()
+}
+
+func (s *PlayerInfo_Storage) Unlock() {
+	s.playerInfoLock.Unlock()
+	s.uuidMapLock.Unlock()
+}
+
+func (s *PlayerInfo_Storage) RLock() {
+	s.playerInfoLock.RLock()
+	s.uuidMapLock.RLock()
+}
+
+func (s *PlayerInfo_Storage) RUnlock() {
+	s.playerInfoLock.RUnlock()
+	s.uuidMapLock.RUnlock()
 }
 
 type PlayerInfo struct {
@@ -104,8 +129,7 @@ type PlayerInfo struct {
 	updateTicker   *time.Ticker
 	playerList     []string
 	playerListLock sync.RWMutex
-	data           PlayerInfo_Storage
-	playerInfoLock sync.RWMutex
+	data           *PlayerInfo_Storage
 }
 
 var PlayerEnterLeaveMessage = regexp.MustCompile(`(left|joined) the game`)
@@ -115,8 +139,7 @@ func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) (err error) {
 	if err != nil {
 		return err
 	}
-	pi.data.PlayerInfo = make(map[string]*MinecraftPlayerInfo)
-	pi.data.UUIDMap = make(map[string]string)
+	pi.data = &PlayerInfo_Storage{PlayerInfo: map[string]*MinecraftPlayerInfo{}, UUIDMap: map[string]string{}}
 	pm.RegisterLogProcesser(pi, pi.playerJoinLeaveEvent)
 	err = pi.Load()
 	if err != nil {
@@ -141,6 +164,24 @@ func (pi *PlayerInfo) convertUUID(rawData []int32) (uuid string, err error) {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", hexUUID[0:8], hexUUID[8:12], hexUUID[12:16], hexUUID[16:20], hexUUID[20:]), nil
 }
 
+func (pi *PlayerInfo) getPlayerName(uuid string) (player string, err error) {
+	pi.data.uuidMapLock.RLock()
+	player, ok := pi.data.UUIDMap[uuid]
+	pi.data.uuidMapLock.RUnlock()
+	if ok {
+		return player, nil
+	}
+	playerScorelist := pi.RunCommand(fmt.Sprintf("scoreboard players list %s", uuid))
+	player, _, ok = strings.Cut(playerScorelist, " ")
+	if !ok {
+		return "", fmt.Errorf("not found")
+	}
+	pi.data.uuidMapLock.Lock()
+	pi.data.UUIDMap[uuid] = player
+	pi.data.uuidMapLock.Unlock()
+	return player, nil
+}
+
 func (pi *PlayerInfo) getPlayerUUID(player string) (uuid string, err error) {
 	uuidEntityData := pi.RunCommand("data get entity " + player + " UUID")
 	uuidData := strings.SplitN(uuidEntityData, ":", 2)
@@ -159,7 +200,19 @@ func (pi *PlayerInfo) getPlayerUUID(player string) (uuid string, err error) {
 	if err != nil {
 		return "", err
 	}
-	return pi.convertUUID(uuidIntArray)
+	uuid, err = pi.convertUUID(uuidIntArray)
+	if err != nil {
+		return "", err
+	}
+	pi.data.uuidMapLock.RLock()
+	_, ok := pi.data.UUIDMap[uuid]
+	pi.data.uuidMapLock.RUnlock()
+	if !ok {
+		pi.data.uuidMapLock.Lock()
+		pi.data.UUIDMap[uuid] = player
+		pi.data.uuidMapLock.Unlock()
+	}
+	return uuid, err
 }
 
 func (pi *PlayerInfo) getPlayerPosition(player string) (position *MinecraftPosition, err error) {
@@ -202,19 +255,24 @@ func (pi *PlayerInfo) GetPlayerInfo_Position(player string) (playerInfo *Minecra
 }
 
 func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerInfo, err error) {
-	var ok bool
-	pi.playerInfoLock.RLock()
-	if !slices.Contains(pi.playerList, player) {
-		pi.playerInfoLock.RUnlock()
-		return nil, fmt.Errorf("玩家不存在")
+	uuid := ""
+	if len(player) == 36 {
+		uuid = player
+		player, err = pi.getPlayerName(uuid)
+		if err != nil {
+			return
+		}
 	}
+	var ok bool
+	pi.data.playerInfoLock.RLock()
 	playerInfo, ok = pi.data.PlayerInfo[player]
-	pi.playerInfoLock.RUnlock()
+	pi.data.playerInfoLock.RUnlock()
 	if !ok {
-		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, Extra: make(map[string]any)}
-		pi.playerInfoLock.Lock()
+		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, Extra: make(map[string]any), UUID: uuid}
+		pi.data.playerInfoLock.Lock()
 		pi.data.PlayerInfo[player] = playerInfo
-		pi.playerInfoLock.Unlock()
+		pi.data.playerInfoLock.Unlock()
+		defer pi.Commit(playerInfo)
 	} else {
 		playerInfo.playerInfo = pi
 		if playerInfo.Extra == nil {
@@ -222,9 +280,13 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 		}
 	}
 	if playerInfo.UUID == "" {
-		playerInfo.UUID, err = pi.getPlayerUUID(player)
-		if err != nil {
-			return nil, err
+		if uuid != "" {
+			playerInfo.UUID = uuid
+		} else {
+			playerInfo.UUID, err = pi.getPlayerUUID(player)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if playerInfo.Location == nil {
@@ -285,13 +347,13 @@ func (pi *PlayerInfo) DisplayName() string {
 }
 
 func (pi *PlayerInfo) Load() error {
-	pi.playerInfoLock.Lock()
-	defer pi.playerInfoLock.Unlock()
 	data, err := os.ReadFile("data/playerinfo.json")
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(data, &pi.playerInfo)
+	pi.data.Lock()
+	defer pi.data.Unlock()
+	err = json.Unmarshal(data, &pi.data)
 	if err != nil {
 		return err
 	}
@@ -302,9 +364,18 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 	if mpi == nil {
 		return fmt.Errorf("无玩家信息")
 	}
+	pi.data.RLock()
+	for _, val := range pi.data.PlayerInfo {
+		val.extraLock.RLock()
+	}
 	saveData, err := json.MarshalIndent(pi.data, "", "\t")
+	for _, val := range pi.data.PlayerInfo {
+		val.extraLock.RUnlock()
+	}
+	pi.data.RUnlock()
 	if err != nil {
 		return err
 	}
+
 	return os.WriteFile("data/playerinfo.json", saveData, 0644)
 }

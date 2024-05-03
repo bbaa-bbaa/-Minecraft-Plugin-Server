@@ -18,6 +18,7 @@ package plugins
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -29,8 +30,23 @@ func (bp *BackupPlugin) Copy(src string, dst string) (err error) {
 	if err != nil {
 		return err
 	}
+	dstStat, err := os.Stat(dst)
 	if !srcStat.IsDir() {
-		return reflink.Auto(src, dst)
+		if err == nil && dstStat.IsDir() {
+			return reflink.Auto(src, filepath.Join(dst, filepath.Base(src)))
+		} else {
+			return reflink.Auto(src, dst)
+		}
+	}
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			err := os.MkdirAll(dst, 0755)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	files, err := os.ReadDir(src)
 	if err != nil {
@@ -57,7 +73,6 @@ func (bp *BackupPlugin) Copy(src string, dst string) (err error) {
 			bp.Copy(source, dest)
 			continue
 		}
-		bp.Println(source, dest)
 		err = reflink.Auto(source, dest)
 		if err != nil {
 			return err
