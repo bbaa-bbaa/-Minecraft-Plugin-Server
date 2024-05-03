@@ -120,7 +120,14 @@ func (bp *BackPlugin) Init(pm pluginabi.PluginManager) (err error) {
 	if err != nil {
 		return err
 	}
-	bp.EnsureScoreboard("Death", "deathCount", "死亡次数")
+	bp.EnsureScoreboard("Death", "deathCount", []tellraw.Message{
+		{Text: "重", Color: tellraw.Red, Bold: true},
+		{Text: "开", Color: tellraw.Light_Purple},
+		{Text: "★", Color: tellraw.Aqua, Bold: true},
+		{Text: "次", Color: tellraw.Green, Bold: true},
+		{Text: "数", Color: tellraw.Yellow},
+	})
+	bp.DisplayScoreboard("Death", "sidebar")
 	pm.RegisterLogProcesser(bp, bp.deathEvent)
 	bp.RegisterCommand("back", bp.back)
 	return nil

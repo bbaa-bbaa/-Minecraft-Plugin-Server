@@ -63,7 +63,7 @@ func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string, _ b
 	defer mc.receiverLock.RUnlock()
 	if mc.responeReceivers != nil {
 		if DedicatedServerMessage.MatchString(logText) && !PlayerMessage.MatchString(logText) &&
-			!GameLeftMessage.MatchString(logText) && !LoginMessage.MatchString(logText) {
+			!GameLeftMessage.MatchString(logText) && !LoginMessage.MatchString(logText) && !PlayerCommandMessage.MatchString(logText) {
 			mc.responeReceivers <- logText
 		}
 	}
@@ -105,12 +105,17 @@ func (mc *MinecraftCommandProcessor) Worker() {
 	cmdReceiver:
 		for {
 			select {
-			case line := <-responseReceiver:
+			case <-renewLockTicker.C:
+				mc.managerClient.Lock()
+			case line, ok := <-responseReceiver:
+				if !ok {
+					continue
+				}
 				if !isWaitRegex {
 					if !endCommandTimer.Stop() {
 						<-endCommandTimer.C
 					}
-					endCommandTimer.Reset(10 * time.Millisecond)
+					endCommandTimer.Reset(10*time.Millisecond + time.Duration(10*len(responseReceiver))*time.Millisecond)
 				}
 				match := DedicatedServerMessage.FindStringSubmatch(line)
 				if len(match) == 2 {
@@ -124,19 +129,19 @@ func (mc *MinecraftCommandProcessor) Worker() {
 					}
 				}
 			case <-endCommandTimer.C:
+				if len(responseReceiver) > 0 {
+					for range responseReceiver {
+					}
+				}
 				mc.receiverLock.Lock()
 				mc.responeReceivers = nil
 				mc.receiverLock.Unlock()
 				break cmdReceiver
-			case <-renewLockTicker.C:
-				mc.managerClient.Lock()
 			case <-mc.cleanSignal:
-				renewLockTicker.Stop()
-				endCommandTimer.Stop()
-				cmd.response <- ""
+				mc.receiverLock.Lock()
 				mc.responeReceivers = nil
-				mc.index++
-				continue
+				mc.receiverLock.Unlock()
+				break cmdReceiver
 			}
 		}
 		renewLockTicker.Stop()

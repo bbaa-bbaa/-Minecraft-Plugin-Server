@@ -94,12 +94,17 @@ func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any
 	mpi.Extra[context.Name()] = extra
 }
 
+type PlayerInfo_Storage struct {
+	PlayerInfo map[string]*MinecraftPlayerInfo
+	UUIDMap    map[string]string
+}
+
 type PlayerInfo struct {
 	BasePlugin
 	updateTicker   *time.Ticker
 	playerList     []string
 	playerListLock sync.RWMutex
-	playerInfo     map[string]*MinecraftPlayerInfo
+	data           PlayerInfo_Storage
 	playerInfoLock sync.RWMutex
 }
 
@@ -110,7 +115,8 @@ func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) (err error) {
 	if err != nil {
 		return err
 	}
-	pi.playerInfo = make(map[string]*MinecraftPlayerInfo)
+	pi.data.PlayerInfo = make(map[string]*MinecraftPlayerInfo)
+	pi.data.UUIDMap = make(map[string]string)
 	pm.RegisterLogProcesser(pi, pi.playerJoinLeaveEvent)
 	err = pi.Load()
 	if err != nil {
@@ -202,12 +208,12 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 		pi.playerInfoLock.RUnlock()
 		return nil, fmt.Errorf("玩家不存在")
 	}
-	playerInfo, ok = pi.playerInfo[player]
+	playerInfo, ok = pi.data.PlayerInfo[player]
 	pi.playerInfoLock.RUnlock()
 	if !ok {
 		playerInfo = &MinecraftPlayerInfo{Player: player, playerInfo: pi, Extra: make(map[string]any)}
 		pi.playerInfoLock.Lock()
-		pi.playerInfo[player] = playerInfo
+		pi.data.PlayerInfo[player] = playerInfo
 		pi.playerInfoLock.Unlock()
 	} else {
 		playerInfo.playerInfo = pi
@@ -296,13 +302,7 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 	if mpi == nil {
 		return fmt.Errorf("无玩家信息")
 	}
-	pi.playerInfoLock.RLock()
-	if !slices.Contains(pi.playerList, mpi.Player) {
-		pi.playerInfoLock.RUnlock()
-		return fmt.Errorf("无玩家信息")
-	}
-	saveData, err := json.MarshalIndent(pi.playerInfo, "", "\t")
-	pi.playerInfoLock.RUnlock()
+	saveData, err := json.MarshalIndent(pi.data, "", "\t")
 	if err != nil {
 		return err
 	}

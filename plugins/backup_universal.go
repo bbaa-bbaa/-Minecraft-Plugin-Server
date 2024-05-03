@@ -12,23 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build unix
+//go:build !linux
 
-package main
+package plugins
 
 import (
-	"io"
-	"syscall"
+	cp "github.com/otiai10/copy"
 )
 
-var MinecraftProcess_SysProcAttr = &syscall.SysProcAttr{
-	Setpgid: true,
-}
-
-func (pty *MinecraftPty) readerWrapper(r io.Reader) io.Reader {
-	return r
-}
-
-func (pty *MinecraftPty) writerWrapper(w io.WriteCloser) io.WriteCloser {
-	return w
+func (bp *BackupPlugin) Copy(src string, dst string) error {
+	return cp.Copy(src, dst)
 }

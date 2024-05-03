@@ -65,7 +65,7 @@ func (sc *ScoreboardCore) ensureScoreboard(context pluginabi.PluginName, name st
 		color.YellowString("]"),
 		color.YellowString("记分板"),
 	)
-	sc.RunCommand(fmt.Sprintf(`scoreboard objectives add %s %s "%s"`, name, criterion, displayname))
+	sc.RunCommand(fmt.Sprintf(`scoreboard objectives add %s %s %s`, name, criterion, displayname))
 	sc.lock.Lock()
 	sc.scorelist = append(sc.scorelist, name)
 	sc.lock.Unlock()

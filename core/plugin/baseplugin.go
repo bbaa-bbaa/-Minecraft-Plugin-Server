@@ -87,15 +87,16 @@ func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) 
 	return nil
 }
 
-func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayname ...string) {
+func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayName []tellraw.Message) {
 	if bp.scoreboardCore == nil {
 		return
 	}
 	dName := ""
-	if len(displayname) == 0 {
-		dName = name
+	if len(displayName) == 0 {
+		dName = fmt.Sprintf(`"%s"`, name)
 	} else {
-		dName = displayname[0]
+		bName, _ := json.Marshal(displayName)
+		dName = string(bName)
 	}
 	bp.scoreboardCore.ensureScoreboard(bp.p, name, criterion, dName)
 }
@@ -159,14 +160,21 @@ func (bp *BasePlugin) RunCommand(command string) string {
 	return bp.pm.RunCommand(command)
 }
 
-func (bp *BasePlugin) Tellraw(Target string, msg []tellraw.Message) string {
+func (bp *BasePlugin) Tellraw(Target string, msg []tellraw.Message) {
 	msg = append([]tellraw.Message{
 		{Text: "[", Color: tellraw.Yellow, Bold: true},
 		{Text: bp.p.DisplayName(), Color: tellraw.Green, Bold: true},
 		{Text: "] ", Color: tellraw.Yellow, Bold: true},
 	}, msg...)
 	jsonMsg, _ := json.Marshal(msg)
-	return bp.pm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
+	bp.pm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
+}
+
+func (bp *BasePlugin) TellrawError(Target string, err error) {
+	if err == nil {
+		return
+	}
+	bp.Tellraw("@a", []tellraw.Message{{Text: "内部错误", Color: tellraw.Red}, {Text: err.Error(), Color: tellraw.Yellow}})
 }
 
 func (bp *BasePlugin) GetWorldName(namespace_id string) string {

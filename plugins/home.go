@@ -66,7 +66,7 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
 		fmt.Println(pi)
-		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
+		hp.TellrawError("@a", err)
 		return
 	}
 	var homeList HomePlugin_HomeList
@@ -127,7 +127,7 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 	pi, err := hp.GetPlayerInfo_Position(player)
 	if err != nil {
 		fmt.Println(err)
-		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
+		hp.TellrawError("@a", err)
 		return
 	}
 	var homeList HomePlugin_HomeList
@@ -172,7 +172,7 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
 		fmt.Println(err)
-		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
+		hp.TellrawError("@a", err)
 		return
 	}
 	var homeList HomePlugin_HomeList
@@ -228,7 +228,7 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
 		fmt.Println(err)
-		hp.Tellraw(player, []tellraw.Message{{Text: "内部错误：无法获取玩家数据", Color: tellraw.Red}})
+		hp.TellrawError("@a", err)
 		return
 	}
 	var homeList HomePlugin_HomeList

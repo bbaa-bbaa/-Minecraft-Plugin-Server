@@ -35,7 +35,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -454,11 +453,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: managerServer}), grpc.KeepaliveParams(keepalive.ServerParameters{
-		MaxConnectionIdle: 15 * time.Second,
-		Time:              10 * time.Second,
-		Timeout:           2 * time.Second,
-	}))
+	rpcServer := grpc.NewServer(grpc.StatsHandler(&RPCHandler{managerServer: managerServer}))
 	manager.RegisterManagerServer(rpcServer, managerServer)
 	go func() {
 		rpcServer.Serve(listener)
