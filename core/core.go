@@ -45,6 +45,20 @@ type PluginManager struct {
 	plugin  pluginabi.Plugin
 }
 
+func (pm *PluginManager) Init(mpm *MinecraftPluginManager) error {
+	mpm.kPrintln(color.YellowString("加载插件 "), color.BlueString(pm.plugin.DisplayName()))
+	err := pm.plugin.Init(mpm)
+	if err != nil {
+		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pm.plugin.DisplayName()), color.RedString(" 加载失败: "), color.MagentaString(err.Error()))
+		return err
+	}
+	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pm.plugin.DisplayName()), color.GreenString(" 加载成功"))
+	if mpm.minecraftState == manager.MinecraftState_running {
+		pm.plugin.Start()
+	}
+	return nil
+}
+
 func (pm *PluginManager) Start() {
 	if pm.plugin != nil && !pm.started {
 		pm.started = true
@@ -75,6 +89,7 @@ type MinecraftPluginManager struct {
 	errBus           chan error
 	commandProcessor *MinecraftCommandProcessor
 	plugins          map[string]*PluginManager
+	delayinitPlugins []*PluginManager
 	pluginLock       sync.RWMutex
 	minecraftState   manager.MinecraftState
 }
@@ -246,28 +261,37 @@ func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (err error) {
+func (mpm *MinecraftPluginManager) loadPlugin(plugin pluginabi.Plugin, init bool) (p pluginabi.Plugin, err error) {
 	pluginName := plugin.Name()
 	pluginDisplayName := plugin.DisplayName()
 	mpm.pluginLock.Lock()
 	if _, ok := mpm.plugins[pluginName]; !ok {
-		mpm.plugins[pluginName] = &PluginManager{plugin: plugin}
+		pm := &PluginManager{plugin: plugin}
+		mpm.plugins[pluginName] = pm
 		mpm.pluginLock.Unlock()
-		mpm.kPrintln(color.YellowString("注册并加载新插件 "), color.BlueString(pluginDisplayName))
-		err := plugin.Init(mpm)
-		if err != nil {
-			mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 加载失败: "), color.MagentaString(err.Error()))
-		}
-		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.GreenString(" 加载成功"))
-		if mpm.minecraftState == manager.MinecraftState_running {
-			plugin.Start()
+		mpm.kPrintln(color.YellowString("注册新插件 "), color.BlueString(pluginDisplayName))
+		if init {
+			err = pm.Init(mpm)
+			if err != nil {
+				return plugin, err
+			}
+		} else {
+			mpm.delayinitPlugins = append(mpm.delayinitPlugins, pm)
 		}
 	} else {
 		mpm.pluginLock.Unlock()
-		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 已经加载，"), color.YellowString("本次加载请求忽略"))
+		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 已经注册"))
 	}
 
-	return nil
+	return plugin, nil
+}
+
+func (mpm *MinecraftPluginManager) registerPlugin(plugin pluginabi.Plugin) (p pluginabi.Plugin, err error) {
+	return mpm.loadPlugin(plugin, false)
+}
+
+func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (p pluginabi.Plugin, err error) {
+	return mpm.loadPlugin(plugin, true)
 }
 
 func (mpm *MinecraftPluginManager) GetPlugin(pluginName string) pluginabi.Plugin {
@@ -293,17 +317,6 @@ func (mpm *MinecraftPluginManager) pluginPause() {
 		plugin.Pause()
 	}
 	mpm.pluginLock.RUnlock()
-}
-
-func (mpm *MinecraftPluginManager) loadBulitinPlugin() {
-	// repl
-	mpm.Repl = &REPLPlugin{}
-	mpm.RegisterPlugin(mpm.Repl)
-
-	mpm.RegisterPlugin(&plugin.ScoreboardCore{})
-	mpm.RegisterPlugin(&plugin.PlayerInfo{})
-	mpm.RegisterPlugin(&plugin.TeleportCore{})
-	mpm.RegisterPlugin(&plugin.SimpleCommand{})
 }
 
 func (mpm *MinecraftPluginManager) startMinecraftServer() (err error) {
@@ -343,13 +356,33 @@ func (mpm *MinecraftPluginManager) startMinecraftServer() (err error) {
 	return nil
 }
 
+func (mpm *MinecraftPluginManager) initDelayedPlugin() {
+	mpm.pluginLock.RLock()
+	for _, pm := range mpm.delayinitPlugins {
+		pm.Init(mpm)
+	}
+	mpm.pluginLock.RUnlock()
+	mpm.pluginLock.Lock()
+	mpm.delayinitPlugins = nil
+	mpm.pluginLock.Unlock()
+}
+
 func (mpm *MinecraftPluginManager) initPlugin() (err error) {
 	mpm.kPrintln(color.YellowString("正在注册命令处理器"))
 	mpm.commandProcessor = &MinecraftCommandProcessor{}
 	mpm.RegisterPlugin(mpm.commandProcessor)
 	mpm.kPrintln(color.YellowString("正在加载内置插件"))
-	mpm.loadBulitinPlugin()
-	return nil
+	// repl
+	mpm.Repl = &REPLPlugin{}
+	mpm.RegisterPlugin(mpm.Repl)
+
+	mpm.registerPlugin(&plugin.ScoreboardCore{})
+	mpm.registerPlugin(&plugin.TellrawManager{})
+	mpm.registerPlugin(&plugin.PlayerInfo{})
+	mpm.registerPlugin(&plugin.TeleportCore{})
+	mpm.registerPlugin(&plugin.SimpleCommand{})
+	mpm.initDelayedPlugin()
+	return
 }
 
 func (mpm *MinecraftPluginManager) initClient(waitForReady bool) (err error) {

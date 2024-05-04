@@ -89,7 +89,7 @@ func (hp *HomePlugin) home(player string, args ...string) {
 		{Text: "2秒后TP至家 ", Color: tellraw.Green, Bold: true},
 		{Text: "「" + homeName + "」", Color: tellraw.Aqua,
 			HoverEvent: &tellraw.HoverEvent{
-				Action: tellraw.HoverEvent_Show_Text, Contents: []tellraw.Message{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
 					{Text: "世界: ", Color: tellraw.Green},
 					{Text: homePosition.Dimension, Color: tellraw.Yellow},
 					{Text: "\n坐标: [", Color: tellraw.Green},
@@ -102,7 +102,7 @@ func (hp *HomePlugin) home(player string, args ...string) {
 				},
 			},
 			ClickEvent: &tellraw.ClickEvent{
-				Action: "suggest_command",
+				Action: tellraw.SuggestCommand,
 				Value:  "!!home " + home,
 			},
 		},
@@ -139,7 +139,7 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 		{Text: "设置家 ", Color: tellraw.Green, Bold: true},
 		{Text: "「" + home + "」", Color: tellraw.Aqua,
 			HoverEvent: &tellraw.HoverEvent{
-				Action: tellraw.HoverEvent_Show_Text, Contents: []tellraw.Message{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
 					{Text: "世界: ", Color: tellraw.Green},
 					{Text: pi.Location.Dimension, Color: tellraw.Yellow},
 					{Text: "\n坐标: [", Color: tellraw.Green},
@@ -152,7 +152,7 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 				},
 			},
 			ClickEvent: &tellraw.ClickEvent{
-				Action: "suggest_command",
+				Action: tellraw.SuggestCommand,
 				Value:  "!!home " + home,
 			},
 		},
@@ -187,7 +187,7 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 		homeMsg = append(homeMsg, tellraw.Message{
 			Text: "「" + home + "」 ", Color: tellraw.Aqua,
 			HoverEvent: &tellraw.HoverEvent{
-				Action: tellraw.HoverEvent_Show_Text, Contents: []tellraw.Message{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
 					{Text: "世界: ", Color: tellraw.Green},
 					{Text: position.Dimension, Color: tellraw.Yellow},
 					{Text: "\n坐标: [", Color: tellraw.Green},
@@ -200,7 +200,7 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 				},
 			},
 			ClickEvent: &tellraw.ClickEvent{
-				Action: "suggest_command",
+				Action: tellraw.SuggestCommand,
 				Value:  "!!home " + home,
 			},
 		})
@@ -240,7 +240,7 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 		{Text: "删除家 ", Color: tellraw.Red, Bold: true},
 		{Text: "「" + home + "」", Color: tellraw.Aqua,
 			HoverEvent: &tellraw.HoverEvent{
-				Action: tellraw.HoverEvent_Show_Text, Contents: []tellraw.Message{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
 					{Text: "世界: ", Color: tellraw.Green},
 					{Text: homeInfo.Dimension, Color: tellraw.Yellow},
 					{Text: "\n坐标: [", Color: tellraw.Green},

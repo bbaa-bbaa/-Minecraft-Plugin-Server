@@ -188,7 +188,7 @@ func (s *StatusPlugin) status(player string, args ...string) {
 		fmt.Println(cpu_usage)
 		usage_bar := int(math.RoundToEven(cpu_usage_avg * 32.0))
 		per_cpu_usage := &tellraw.HoverEvent{
-			Action: tellraw.HoverEvent_Show_Text,
+			Action: tellraw.Show_Text,
 			Contents: lo.Flatten(lo.Map(cpu_usage, func(usage float64, index int) (m []tellraw.Message) {
 				if index != 0 {
 					m = append(m, tellraw.Message{Text: "\n"})

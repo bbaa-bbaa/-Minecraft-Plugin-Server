@@ -66,9 +66,9 @@ type Message struct {
 type HoverEvent_Action string
 
 var (
-	HoverEvent_Show_Text   HoverEvent_Action = "show_text"
-	HoverEvent_Show_Item   HoverEvent_Action = "show_item"
-	HoverEvent_Show_Entity HoverEvent_Action = "show_entity"
+	Show_Text   HoverEvent_Action = "show_text"
+	Show_Item   HoverEvent_Action = "show_item"
+	Show_Entity HoverEvent_Action = "show_entity"
 )
 
 type HoverEvent struct {
@@ -88,8 +88,19 @@ type HoverEvent_Entity struct {
 	UUID string   `json:"uuid"`
 }
 
+type ClickEvent_Action string
+
+var (
+	OpenURL         ClickEvent_Action = "open_url"
+	OpenFile        ClickEvent_Action = "open_file"
+	RunCommand      ClickEvent_Action = "run_command"
+	SuggestCommand  ClickEvent_Action = "suggest_command"
+	ChangePage      ClickEvent_Action = "change_page"
+	CopyToClipboard ClickEvent_Action = "copy_to_clipboard"
+)
+
 type ClickEvent struct {
-	Action string `json:"action"`
-	Value  string `json:"value"`
-	GoFunc func() `json:"-"`
+	Action ClickEvent_Action              `json:"action"`
+	Value  string                         `json:"value"`
+	GoFunc func(player string, value int) `json:"-"`
 }

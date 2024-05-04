@@ -30,6 +30,7 @@ type BasePlugin struct {
 	playerInfo     *PlayerInfo
 	simpleCommand  *SimpleCommand
 	scoreboardCore *ScoreboardCore
+	tellrawManager *TellrawManager
 }
 
 func (bp *BasePlugin) Println(a ...any) (int, error) {
@@ -40,50 +41,37 @@ func (bp *BasePlugin) Teleport(src string, dst any) error {
 	return bp.teleportCore.Teleport(src, dst)
 }
 
-func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) error {
-	bp.pm = pm
-	bp.p = plugin
-	ignoreErr := false
-	switch plugin.(type) {
-	case *TeleportCore, *PlayerInfo, *SimpleCommand, *ScoreboardCore:
-		ignoreErr = true
-	}
-
+func (bp *BasePlugin) initCorePlugin(pm pluginabi.PluginManager) {
 	pi := pm.GetPlugin("PlayerInfo")
-	if pi == nil {
-		if !ignoreErr {
-			return fmt.Errorf("no playerinfo instance")
-		}
-	} else {
+	if pi != nil {
 		bp.playerInfo = pi.(*PlayerInfo)
 	}
 
 	sc := pm.GetPlugin("ScoreboardCore")
-	if sc == nil {
-		if !ignoreErr {
-			return fmt.Errorf("no scoreboard instance")
-		}
-	} else {
+	if sc != nil {
 		bp.scoreboardCore = sc.(*ScoreboardCore)
 	}
 
+	tm := pm.GetPlugin("TellrawManager")
+	if tm != nil {
+		bp.tellrawManager = tm.(*TellrawManager)
+	}
+
 	tc := pm.GetPlugin("TeleportCore")
-	if tc == nil {
-		if !ignoreErr {
-			return fmt.Errorf("no Teleport Core instance")
-		}
-	} else {
+	if tc != nil {
 		bp.teleportCore = tc.(*TeleportCore)
 	}
 
 	sp := pm.GetPlugin("SimpleCommand")
-	if sp == nil {
-		if !ignoreErr {
-			return fmt.Errorf("no simplecommand instance")
-		}
-	} else {
+	if sp != nil {
 		bp.simpleCommand = sp.(*SimpleCommand)
 	}
+}
+
+func (bp *BasePlugin) Init(pm pluginabi.PluginManager, plugin pluginabi.Plugin) error {
+	bp.pm = pm
+	bp.p = plugin
+	bp.initCorePlugin(pm)
 	return nil
 }
 
@@ -99,6 +87,13 @@ func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayNam
 		dName = string(bName)
 	}
 	bp.scoreboardCore.ensureScoreboard(bp.p, name, criterion, dName)
+}
+
+func (bp *BasePlugin) RegisterTrigger(goFunc func(string, int)) (name string) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	return bp.scoreboardCore.registerTrigger(bp.p, goFunc)
 }
 
 func (bp *BasePlugin) DisplayScoreboard(name string, slot string) {
@@ -161,13 +156,7 @@ func (bp *BasePlugin) RunCommand(command string) string {
 }
 
 func (bp *BasePlugin) Tellraw(Target string, msg []tellraw.Message) {
-	msg = append([]tellraw.Message{
-		{Text: "[", Color: tellraw.Yellow, Bold: true},
-		{Text: bp.p.DisplayName(), Color: tellraw.Green, Bold: true},
-		{Text: "] ", Color: tellraw.Yellow, Bold: true},
-	}, msg...)
-	jsonMsg, _ := json.Marshal(msg)
-	bp.pm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
+	bp.tellrawManager.Tellraw(bp.p, Target, msg)
 }
 
 func (bp *BasePlugin) TellrawError(Target string, err error) {

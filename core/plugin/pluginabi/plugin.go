@@ -53,7 +53,7 @@ type PluginManager interface {
 	Println(scope string, a ...any) (n int, err error)
 	RegisterLogProcesser(context PluginName, process func(logmsg string, iscommandrespone bool)) (channel chan *manager.MessageResponse)
 	RegisterManagerMessageChannel(skipRegister bool) (channel chan *manager.MessageResponse)
-	RegisterPlugin(plugin Plugin) (err error)
+	RegisterPlugin(plugin Plugin) (p Plugin, err error)
 	GetPlugin(pluginName string) Plugin
 	UnRegisterManagerMessageChannel(channel chan *manager.MessageResponse)
 

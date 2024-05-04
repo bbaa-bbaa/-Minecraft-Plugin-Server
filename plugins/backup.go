@@ -27,6 +27,7 @@ import (
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"github.com/fatih/color"
 	"github.com/go-co-op/gocron/v2"
 )
 
@@ -37,6 +38,7 @@ type BackupPlugin struct {
 	backupLock             sync.Mutex
 	cron                   gocron.Scheduler
 	backupPlayerdataTicker *time.Ticker
+	pm                     pluginabi.PluginManager
 }
 
 func (bp *BackupPlugin) DisplayName() string {
@@ -68,6 +70,9 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 	for _, subdir := range playerdataDir {
 		dir := filepath.Join(bp.Source, subdir)
 		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			if d.IsDir() {
 				return nil
 			}
@@ -103,6 +108,9 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 	for _, subdir := range playerdataDir {
 		dir := filepath.Join(bp.Source, subdir)
 		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			if d.IsDir() {
 				return nil
 			}
@@ -183,7 +191,26 @@ func (bp *BackupPlugin) MakeBackup(comment string) {
 	})
 }
 
+func (bp *BackupPlugin) Rollback(backup string) {
+	bp.Println(color.YellowString("正在回档: "), color.BlueString(backup))
+	bp.Println(color.RedString("等待游戏服务器关闭"))
+	bp.pm.Stop()
+	bp.Println(color.GreenString("游戏服务器已关闭"))
+	bp.Println(color.YellowString("创建回档前备份"))
+	bp.MakeBackup("PreRollback")
+	bp.Println(color.GreenString("备份结束"))
+	bp.backupLock.Lock()
+	os.RemoveAll(bp.Source)
+	bp.Println(color.YellowString("正在复制存档"))
+	bp.Copy(backup, bp.Source)
+	bp.Println(color.GreenString("回档结束"))
+	bp.backupLock.Unlock()
+	bp.Println(color.GreenString("请求启动游戏服务器"))
+	bp.pm.StartMinecraft()
+}
+
 func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
+	bp.pm = pm
 	bp.cron, _ = gocron.NewScheduler()
 	bp.cron.NewJob(gocron.CronJob("*/30 * * * *", false), gocron.NewTask(func() {
 		bp.MakeBackup("AutoBackup")
@@ -205,6 +232,9 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 }
 
 func (bp *BackupPlugin) Start() {
+	bp.Tellraw("@a", []tellraw.Message{{Text: "测试", ClickEvent: &tellraw.ClickEvent{Action: tellraw.RunCommand, GoFunc: func(player string, value int) {
+		bp.Tellraw("@a", []tellraw.Message{{Text: player}})
+	}}}})
 	bp.cron.Start()
 	if bp.backupPlayerdataTicker == nil {
 		bp.backupPlayerdataTicker = time.NewTicker(60 * time.Second)
