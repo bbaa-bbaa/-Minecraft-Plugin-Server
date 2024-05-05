@@ -99,8 +99,9 @@ var (
 	CopyToClipboard ClickEvent_Action = "copy_to_clipboard"
 )
 
+type GoFunc func(string, int)
 type ClickEvent struct {
-	Action ClickEvent_Action              `json:"action"`
-	Value  string                         `json:"value"`
-	GoFunc func(player string, value int) `json:"-"`
+	Action ClickEvent_Action `json:"action"`
+	Value  string            `json:"value"`
+	GoFunc GoFunc            `json:"-"`
 }

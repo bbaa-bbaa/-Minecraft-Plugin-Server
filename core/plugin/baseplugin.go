@@ -89,7 +89,7 @@ func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayNam
 	bp.scoreboardCore.ensureScoreboard(bp.p, name, criterion, dName)
 }
 
-func (bp *BasePlugin) RegisterTrigger(goFunc func(string, int)) (name string) {
+func (bp *BasePlugin) RegisterTrigger(goFunc tellraw.GoFunc) (name string) {
 	if bp.scoreboardCore == nil {
 		return
 	}

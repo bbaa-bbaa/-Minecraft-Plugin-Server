@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/cespare/xxhash/v2"
 	"github.com/fatih/color"
 	"github.com/samber/lo"
@@ -52,7 +53,6 @@ func (sc *ScoreboardCore) Init(pm pluginabi.PluginManager) error {
 }
 
 func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
-	sc.Println(logText)
 	triggerInfo := sc.triggerInfo.FindStringSubmatch(logText)
 	if len(triggerInfo) < 5 {
 		return
@@ -191,7 +191,7 @@ func (sc *ScoreboardCore) syncOneScore(context pluginabi.PluginName, player stri
 	}
 }
 
-func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, goFunc func(string, int)) (name string) {
+func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, goFunc tellraw.GoFunc) (name string) {
 	sc.tlock.RLock()
 	for {
 		name = fmt.Sprintf("%s_m_trigger_%04x", sc.getNamespace(context)[:4], rand.Intn(65535))

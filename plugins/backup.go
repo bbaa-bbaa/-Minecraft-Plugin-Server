@@ -29,7 +29,18 @@ import (
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
 	"github.com/go-co-op/gocron/v2"
+	"github.com/samber/lo"
 )
+
+const BackupPlugin_PageSize = 5
+
+type BackupPlugin_RollbackPending interface {
+	Comfirm()
+	Abort()
+}
+
+type RollbackWorldPending struct {
+}
 
 type BackupPlugin struct {
 	plugin.BasePlugin
@@ -37,6 +48,7 @@ type BackupPlugin struct {
 	Dest                   string // backup dest
 	backupLock             sync.Mutex
 	cron                   gocron.Scheduler
+	rollbackPending        BackupPlugin_RollbackPending
 	backupPlayerdataTicker *time.Ticker
 	pm                     pluginabi.PluginManager
 }
@@ -191,6 +203,116 @@ func (bp *BackupPlugin) MakeBackup(comment string) {
 	})
 }
 
+func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func(string) tellraw.GoFunc) {
+	if start >= len(list) {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "该页没有内容", Color: tellraw.Red}})
+	}
+	start = min(max(0, start), len(list)-1)
+	end = max(min(len(list), end), 0)
+	listSlice := list[start:end]
+	message := []tellraw.Message{
+		{Text: "正在查看第", Color: tellraw.Aqua},
+		{Text: fmt.Sprintf("%d", start/BackupPlugin_PageSize+1), Color: tellraw.Light_Purple},
+		{Text: "页/", Color: tellraw.Aqua},
+		{Text: "共", Color: tellraw.Aqua},
+		{
+			Text:  fmt.Sprintf("%d", (len(list)+BackupPlugin_PageSize-1)/BackupPlugin_PageSize),
+			Color: tellraw.Light_Purple,
+		},
+		{Text: "页\n", Color: tellraw.Aqua},
+	}
+	for index, item := range listSlice {
+		message = append(message, []tellraw.Message{
+			{Text: fmt.Sprintf("%d.", index+1), Color: tellraw.Aqua},
+			{Text: item, Color: tellraw.Yellow},
+			{Text: "【点我选择】\n", Color: tellraw.Green, ClickEvent: &tellraw.ClickEvent{Action: tellraw.RunCommand, GoFunc: execCmd(item)}},
+		}...)
+	}
+	if start == 0 {
+		message = append(message, []tellraw.Message{
+			{Text: "<", Color: tellraw.Yellow},
+			{Text: "上一页", Color: tellraw.Gray},
+		}...)
+	} else {
+		message = append(message, []tellraw.Message{
+			{Text: "<", Color: tellraw.Yellow},
+			{Text: "上一页", Color: tellraw.Green,
+				ClickEvent: &tellraw.ClickEvent{
+					Action: tellraw.RunCommand,
+					GoFunc: func(s string, i int) {
+						bp.rollbackList(list[max(0, start-BackupPlugin_PageSize)])
+					},
+				},
+			},
+		}...)
+	}
+	message = append(message, tellraw.Message{
+		Text: "|", Color: tellraw.Yellow, Bold: true,
+	})
+	if len(list)-end <= 1 {
+		message = append(message, []tellraw.Message{
+			{Text: "下一页", Color: tellraw.Gray},
+			{Text: ">", Color: tellraw.Yellow},
+		}...)
+	} else {
+		message = append(message, []tellraw.Message{
+			{Text: "下一页", Color: tellraw.Green,
+				ClickEvent: &tellraw.ClickEvent{
+					Action: tellraw.RunCommand,
+					GoFunc: func(s string, i int) {
+						bp.rollbackList(list[min(len(list)-1, end)])
+					},
+				},
+			},
+			{Text: ">", Color: tellraw.Yellow},
+		}...)
+	}
+	bp.Tellraw("@a", message)
+}
+
+func (bp *BackupPlugin) rollbackSelected(player string, name string) {
+
+}
+
+func (bp *BackupPlugin) rollbackList(start string) {
+	bp.Println("rollbackList")
+	backupFiles, err := os.ReadDir(filepath.Join(bp.Dest, "world"))
+	if err != nil {
+		bp.TellrawError("@a", err)
+	}
+	if len(backupFiles) == 0 {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
+		return
+	}
+	slices.SortFunc(backupFiles, func(a fs.DirEntry, b fs.DirEntry) int {
+		stata, err := a.Info()
+		if err != nil {
+			return 0
+		}
+		statb, err := b.Info()
+		if err != nil {
+			return 0
+		}
+		return statb.ModTime().Compare(stata.ModTime())
+	})
+	backupList := lo.Map(backupFiles, func(item fs.DirEntry, index int) string {
+		return item.Name()
+	})
+	index := slices.Index(backupList, start)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(backupList) {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
+		return
+	}
+	bp.showList(backupList, index, min(len(backupList), index+BackupPlugin_PageSize), func(selected string) tellraw.GoFunc {
+		return func(player string, i int) {
+			bp.rollbackSelected(player, selected)
+		}
+	})
+}
+
 func (bp *BackupPlugin) Rollback(backup string) {
 	bp.Println(color.YellowString("正在回档: "), color.BlueString(backup))
 	bp.Println(color.RedString("等待游戏服务器关闭"))
@@ -209,6 +331,29 @@ func (bp *BackupPlugin) Rollback(backup string) {
 	bp.pm.StartMinecraft()
 }
 
+func (bp *BackupPlugin) Cli(player string, args ...string) {
+	if len(args) == 0 {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "未知的命令", Color: tellraw.Red}})
+		return
+	}
+	switch args[0] {
+	case "make":
+		if len(args) < 2 {
+			bp.Tellraw("@a", []tellraw.Message{{Text: "没有填写备注", Color: tellraw.Red}})
+			return
+		}
+		bp.MakeBackup(strings.Join(args[1:], " "))
+	case "rollback":
+		if len(args) < 2 {
+			bp.rollbackList("")
+			return
+		} else {
+			bp.rollbackSelected(player, strings.Join(args[1:], " "))
+		}
+	}
+
+}
+
 func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 	bp.pm = pm
 	bp.cron, _ = gocron.NewScheduler()
@@ -219,22 +364,11 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 	if err != nil {
 		return err
 	}
-	bp.RegisterCommand("backup", func(s1 string, s2 ...string) {
-		if len(s2) != 2 {
-			bp.Tellraw(s1, []tellraw.Message{{Text: "备份备注不能为空或含有空格", Color: tellraw.Red}})
-			return
-		}
-		if s2[0] == "backup" {
-			bp.MakeBackup(s2[1])
-		}
-	})
+	bp.RegisterCommand("backup", bp.Cli)
 	return nil
 }
 
 func (bp *BackupPlugin) Start() {
-	bp.Tellraw("@a", []tellraw.Message{{Text: "测试", ClickEvent: &tellraw.ClickEvent{Action: tellraw.RunCommand, GoFunc: func(player string, value int) {
-		bp.Tellraw("@a", []tellraw.Message{{Text: player}})
-	}}}})
 	bp.cron.Start()
 	if bp.backupPlayerdataTicker == nil {
 		bp.backupPlayerdataTicker = time.NewTicker(60 * time.Second)
