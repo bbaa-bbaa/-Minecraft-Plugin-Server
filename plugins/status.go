@@ -15,6 +15,7 @@ package plugins
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"regexp"
 	"slices"
@@ -181,11 +182,13 @@ func (s *StatusPlugin) status(player string, args ...string) {
 	s.Tellraw(`@a`, []tellraw.Message{{Text: "============ 系统负载 ============", Color: tellraw.Green}})
 	cpu_count, _ := cpu.Counts(true)
 	cpu_usage, err := cpu.Percent(0, true)
+	if err != nil {
+		log.Panic(err)
+	}
 	if err == nil {
 		cpu_usage_avg := lo.Reduce(cpu_usage, func(agg float64, item float64, index int) float64 {
 			return agg + item
 		}, 0) / float64(len(cpu_usage)) / 100.0
-		fmt.Println(cpu_usage)
 		usage_bar := int(math.RoundToEven(cpu_usage_avg * 32.0))
 		per_cpu_usage := &tellraw.HoverEvent{
 			Action: tellraw.Show_Text,
@@ -199,7 +202,8 @@ func (s *StatusPlugin) status(player string, args ...string) {
 					{Text: "[", Color: tellraw.Yellow},
 					{Text: strings.Repeat("|", max(usage_bar, 0)), Color: tellraw.Red},
 					{Text: strings.Repeat("|", max(32-usage_bar, 0)), Color: tellraw.Green},
-					{Text: fmt.Sprintf("] %.2f%%", usage), Color: s.floatLevel(cpu_usage_avg)},
+					{Text: "]", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf(" %.2f%%", usage), Color: s.floatLevel(cpu_usage_avg)},
 				}...)
 				return m
 			})),
@@ -209,9 +213,9 @@ func (s *StatusPlugin) status(player string, args ...string) {
 			{Text: "[", Color: tellraw.Yellow},
 			{Text: strings.Repeat("|", max(usage_bar, 0)), Color: tellraw.Red, HoverEvent: per_cpu_usage},
 			{Text: strings.Repeat("|", max(32-usage_bar, 0)), Color: tellraw.Green, HoverEvent: per_cpu_usage},
-			{Text: fmt.Sprintf("] %.2f%%", cpu_usage_avg*100), Color: s.floatLevel(cpu_usage_avg)},
+			{Text: "]", Color: tellraw.Yellow},
+			{Text: fmt.Sprintf(" %.2f%%", cpu_usage_avg*100), Color: s.floatLevel(cpu_usage_avg)},
 		})
-
 	}
 	system_load, err := load.Avg()
 	if err == nil && cpu_count != 0 {
@@ -293,5 +297,6 @@ func (s *StatusPlugin) Start() {
 }
 
 func (s *StatusPlugin) Pause() {
+	s.Println("插件停止")
 	s.monitorTicker.Stop()
 }

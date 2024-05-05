@@ -93,7 +93,14 @@ func (bp *BasePlugin) RegisterTrigger(goFunc tellraw.GoFunc) (name string) {
 	if bp.scoreboardCore == nil {
 		return
 	}
-	return bp.scoreboardCore.registerTrigger(bp.p, goFunc)
+	return bp.scoreboardCore.registerTrigger(bp.p, goFunc)[0]
+}
+
+func (bp *BasePlugin) RegisterTriggerBatch(goFunc ...tellraw.GoFunc) (name []string) {
+	if bp.scoreboardCore == nil {
+		return
+	}
+	return bp.scoreboardCore.registerTrigger(bp.p, goFunc...)
 }
 
 func (bp *BasePlugin) DisplayScoreboard(name string, slot string) {

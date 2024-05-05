@@ -35,11 +35,137 @@ import (
 const BackupPlugin_PageSize = 5
 
 type BackupPlugin_RollbackPending interface {
-	Comfirm()
-	Abort()
+	Comfirm(player string)
+	Abort(player string)
+	Start(caller *BackupPlugin)
 }
 
 type RollbackWorldPending struct {
+	player    string
+	cancel    *time.Timer
+	comfirm   *time.Ticker
+	countdown int
+	name      string
+	path      string
+	bp        *BackupPlugin
+	fstat     fs.FileInfo
+}
+
+func (rwp *RollbackWorldPending) Start(caller *BackupPlugin) {
+	var err error
+	rwp.bp = caller
+	rwp.path = filepath.Join(rwp.bp.Dest, "world", rwp.name)
+	rwp.fstat, err = os.Stat(rwp.path)
+	if err != nil {
+		rwp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: "找不到所请求的备份文件", Color: tellraw.Red},
+		})
+	}
+	rwp.bp.rollbackLock.RLock()
+	pd := rwp.bp.rollbackPending
+	rwp.bp.rollbackLock.RUnlock()
+	if pd != nil {
+		rwp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: "已有正在进行的回档请求", Color: tellraw.Red},
+		})
+		return
+	}
+	rwp.bp.rollbackLock.Lock()
+	rwp.bp.rollbackPending = rwp
+	rwp.bp.rollbackLock.Unlock()
+	rwp.cancel = time.AfterFunc(10*time.Second, func() {
+		rwp.Abort(rwp.player)
+	})
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: "======== ", Color: tellraw.Red},
+		{Text: "回档请求确认", Color: tellraw.Light_Purple},
+		{Text: " ========", Color: tellraw.Red},
+	})
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: "名称: ", Color: tellraw.Yellow},
+		{Text: rwp.name, Color: tellraw.Green},
+	})
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: "时间: ", Color: tellraw.Yellow},
+		{Text: rwp.fstat.ModTime().Format(time.RFC3339), Color: tellraw.Green},
+	})
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: "输入[", Color: tellraw.Yellow},
+		{Text: "!!backup confirm", Color: tellraw.Red,
+			ClickEvent: &tellraw.ClickEvent{
+				Action: tellraw.SuggestCommand,
+				Value:  "!!backup confirm",
+			},
+		},
+		{Text: "]继续 ", Color: tellraw.Yellow},
+		{Text: "点击[", Color: tellraw.Yellow},
+		{Text: "!!backup cancel", Color: tellraw.Red,
+			ClickEvent: &tellraw.ClickEvent{
+				Action: tellraw.RunCommand,
+				GoFunc: func(s string, i int) {
+					rwp.Abort(rwp.player)
+				},
+			},
+		},
+		{Text: "]取消", Color: tellraw.Yellow},
+	})
+}
+
+func (rwp *RollbackWorldPending) Execute() {
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
+		{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
+	})
+	for range rwp.comfirm.C {
+		rwp.countdown--
+		rwp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
+			{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
+		})
+		if rwp.countdown == 0 {
+			break
+		}
+	}
+	rwp.comfirm.Stop()
+	rwp.bp.backupLock.Lock()
+	defer rwp.bp.backupLock.Unlock()
+	rwp.bp.Println(color.RedString("回档："), color.YellowString(rwp.path))
+	rwp.bp.Println(color.RedString("关闭服务器"))
+	rwp.bp.pm.Stop()
+	rwp.bp.Println(color.RedString("释放存档"))
+	os.RemoveAll(rwp.bp.Source)
+	rwp.bp.Copy(rwp.path, rwp.bp.Source)
+	rwp.bp.Println(color.YellowString("重启服务器"))
+	rwp.bp.pm.StartMinecraft()
+
+	rwp.bp.rollbackLock.Lock()
+	rwp.bp.rollbackPending = nil
+	rwp.bp.rollbackLock.Unlock()
+	rwp.bp.Println(color.GreenString("回档流程结束"))
+}
+
+func (rwp *RollbackWorldPending) Comfirm(player string) {
+	rwp.cancel.Stop()
+	rwp.countdown = 10
+	rwp.comfirm = time.NewTicker(1 * time.Second)
+	go rwp.Execute()
+}
+
+func (rwp *RollbackWorldPending) Abort(player string) {
+	rwp.bp.rollbackLock.Lock()
+	rwp.bp.rollbackPending = nil
+	rwp.bp.rollbackLock.Unlock()
+	usercancel := rwp.cancel.Stop()
+	if rwp.comfirm == nil && !usercancel {
+		rwp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: "回档请求超时", Color: tellraw.Red},
+		})
+	} else if rwp.comfirm != nil {
+		rwp.comfirm.Stop()
+	}
+	rwp.bp.Tellraw("@a", []tellraw.Message{
+		{Text: "已取消本次回档请求", Color: tellraw.Red},
+	})
 }
 
 type BackupPlugin struct {
@@ -47,6 +173,7 @@ type BackupPlugin struct {
 	Source                 string // Minecraft world source dir
 	Dest                   string // backup dest
 	backupLock             sync.Mutex
+	rollbackLock           sync.RWMutex
 	cron                   gocron.Scheduler
 	rollbackPending        BackupPlugin_RollbackPending
 	backupPlayerdataTicker *time.Ticker
@@ -271,7 +398,8 @@ func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func
 }
 
 func (bp *BackupPlugin) rollbackSelected(player string, name string) {
-
+	rollbackRequest := &RollbackWorldPending{player: player, name: name}
+	rollbackRequest.Start(bp)
 }
 
 func (bp *BackupPlugin) rollbackList(start string) {
@@ -331,6 +459,32 @@ func (bp *BackupPlugin) Rollback(backup string) {
 	bp.pm.StartMinecraft()
 }
 
+func (bp *BackupPlugin) Confirm(player string) {
+	bp.rollbackLock.RLock()
+	rb := bp.rollbackPending
+	bp.rollbackLock.RUnlock()
+	if rb != nil {
+		rb.Comfirm(player)
+	} else {
+		bp.Tellraw("@a", []tellraw.Message{
+			{Text: "没有正在进行的回档请求", Color: tellraw.Red},
+		})
+	}
+}
+
+func (bp *BackupPlugin) Cancel(player string) {
+	bp.rollbackLock.RLock()
+	rb := bp.rollbackPending
+	bp.rollbackLock.RUnlock()
+	if rb != nil {
+		rb.Abort(player)
+	} else {
+		bp.Tellraw("@a", []tellraw.Message{
+			{Text: "没有正在进行的回档请求", Color: tellraw.Red},
+		})
+	}
+}
+
 func (bp *BackupPlugin) Cli(player string, args ...string) {
 	if len(args) == 0 {
 		bp.Tellraw("@a", []tellraw.Message{{Text: "未知的命令", Color: tellraw.Red}})
@@ -350,6 +504,10 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 		} else {
 			bp.rollbackSelected(player, strings.Join(args[1:], " "))
 		}
+	case "cancel":
+		bp.Cancel(player)
+	case "confirm":
+		bp.Confirm(player)
 	}
 
 }

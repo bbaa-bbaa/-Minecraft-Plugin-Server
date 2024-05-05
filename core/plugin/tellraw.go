@@ -42,14 +42,39 @@ func (tm *TellrawManager) Init(pm pluginabi.PluginManager) (err error) {
 	return nil
 }
 
-func (tm *TellrawManager) clickTriggerWrapper(p pluginabi.PluginName, msg []tellraw.Message) (out []tellraw.Message) {
+func (tm *TellrawManager) cleanUp(msg []tellraw.Message) (out []tellraw.Message) {
 	for _, m := range msg {
-		if m.ClickEvent != nil && m.ClickEvent.Action == tellraw.RunCommand && m.ClickEvent.GoFunc != nil {
-			m.ClickEvent.Value = fmt.Sprintf("/trigger %s", tm.scoreboardCore.registerTrigger(p, m.ClickEvent.GoFunc))
+		if (m.Type == "" || m.Type == tellraw.Text) && m.Text == "" {
+			continue
+		}
+		if m.HoverEvent != nil && m.HoverEvent.Action == tellraw.Show_Text {
+			if m.HoverEvent.Contents == nil {
+				m.HoverEvent = nil
+			} else {
+				m.HoverEvent.Contents = tm.cleanUp(m.HoverEvent.Contents.([]tellraw.Message))
+			}
 		}
 		out = append(out, m)
 	}
 	return out
+}
+
+func (tm *TellrawManager) clickTriggerWrapper(p pluginabi.PluginName, msg []tellraw.Message) []tellraw.Message {
+	triggerValueList := []*string{}
+	triggerFuncList := []tellraw.GoFunc{}
+	for i := range msg {
+		if msg[i].ClickEvent != nil && msg[i].ClickEvent.Action == tellraw.RunCommand && msg[i].ClickEvent.GoFunc != nil {
+			triggerFuncList = append(triggerFuncList, msg[i].ClickEvent.GoFunc)
+			triggerValueList = append(triggerValueList, &msg[i].ClickEvent.Value)
+		}
+	}
+	if len(triggerFuncList) > 0 {
+		triggerName := tm.scoreboardCore.registerTrigger(p, triggerFuncList...)
+		for idx, name := range triggerName {
+			*triggerValueList[idx] = fmt.Sprintf(`/trigger %s`, name)
+		}
+	}
+	return msg
 }
 
 func (tm *TellrawManager) Tellraw(p pluginabi.PluginName, Target string, msg []tellraw.Message) {
@@ -58,6 +83,7 @@ func (tm *TellrawManager) Tellraw(p pluginabi.PluginName, Target string, msg []t
 		{Text: p.DisplayName(), Color: tellraw.Green, Bold: true},
 		{Text: "] ", Color: tellraw.Yellow, Bold: true},
 	}, msg...)
+	msg = tm.cleanUp(msg)
 	msg = tm.clickTriggerWrapper(p, msg)
 	jsonMsg, _ := json.Marshal(msg)
 	tm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))

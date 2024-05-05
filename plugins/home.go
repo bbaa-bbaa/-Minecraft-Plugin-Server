@@ -177,12 +177,11 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
 		return
 	}
-	hp.Tellraw(player, []tellraw.Message{{Text: "你拥有以下家:", Color: tellraw.Green}, {Text: "[点击可快速输入]", Color: tellraw.Light_Purple, Bold: true}})
 	if len(homeList) == 0 {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
 		return
 	}
-	homeMsg := []tellraw.Message{}
+	homeMsg := []tellraw.Message{{Text: "你拥有以下家:", Color: tellraw.Green}, {Text: "[点击可快速传送]\n", Color: tellraw.Light_Purple, Bold: true}}
 	for home, position := range homeList {
 		homeMsg = append(homeMsg, tellraw.Message{
 			Text: "「" + home + "」 ", Color: tellraw.Aqua,
@@ -200,8 +199,13 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 				},
 			},
 			ClickEvent: &tellraw.ClickEvent{
-				Action: tellraw.SuggestCommand,
-				Value:  "!!home " + home,
+				Action: tellraw.RunCommand,
+				GoFunc: func(tplayer string, i int) {
+					if player != tplayer {
+						return
+					}
+					hp.home(player, home)
+				},
 			},
 		})
 	}

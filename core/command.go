@@ -173,5 +173,8 @@ func (mc *MinecraftCommandProcessor) Start() {
 }
 
 func (mc *MinecraftCommandProcessor) Pause() {
-	mc.cleanSignal <- struct{}{}
+	select {
+	case mc.cleanSignal <- struct{}{}:
+	default:
+	}
 }

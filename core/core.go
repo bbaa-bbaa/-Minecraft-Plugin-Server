@@ -30,7 +30,6 @@ import (
 	"github.com/fatih/color"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -54,7 +53,7 @@ func (pm *PluginManager) Init(mpm *MinecraftPluginManager) error {
 	}
 	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pm.plugin.DisplayName()), color.GreenString(" 加载成功"))
 	if mpm.minecraftState == manager.MinecraftState_running {
-		pm.plugin.Start()
+		pm.Start()
 	}
 	return nil
 }
@@ -252,7 +251,7 @@ func (mpm *MinecraftPluginManager) getStatus() (status *manager.StatusResponse, 
 	return status, nil
 }
 
-func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
+func (mpm *MinecraftPluginManager) startMinecraft() (err error) {
 	_, err = mpm.Start(&manager.StartRequest{Client: mpm.ClientInfo, Path: mpm.StartScript})
 	if err != nil {
 		mpm.kPrintln(color.RedString("Minecraft 服务器启动失败: %s", err.Error()))
@@ -319,7 +318,7 @@ func (mpm *MinecraftPluginManager) pluginPause() {
 	mpm.pluginLock.RUnlock()
 }
 
-func (mpm *MinecraftPluginManager) startMinecraftServer() (err error) {
+func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
 	mpm.kPrintln(color.YellowString("正在获取服务器状态"))
 	status, err := mpm.getStatus()
 	if err != nil {
@@ -337,7 +336,7 @@ func (mpm *MinecraftPluginManager) startMinecraftServer() (err error) {
 		close(minecraftStartingLog)
 	case manager.MinecraftState_stopped:
 		mpm.kPrintln(color.YellowString("正在启动 Minecraft 服务器"))
-		err = mpm.StartMinecraft()
+		err = mpm.startMinecraft()
 		if err != nil {
 			return err
 		}
@@ -414,6 +413,7 @@ func (mpm *MinecraftPluginManager) errorHandler() {
 	for err := range mpm.errBus {
 		switch err {
 		case errGameServerStopped:
+			mpm.kPrintln(color.RedString("服务器关闭，请求停止插件"))
 			mpm.pluginPause()
 		case errGrpcChannelDisconnect:
 			mpm.ClientInfo = nil
@@ -425,7 +425,7 @@ func (mpm *MinecraftPluginManager) errorHandler() {
 						time.Sleep(5 * time.Second)
 						continue
 					}
-					err = mpm.startMinecraftServer()
+					err = mpm.StartMinecraft()
 					if err != nil {
 						time.Sleep(5 * time.Second)
 						continue
@@ -455,7 +455,7 @@ func (mpm *MinecraftPluginManager) initManager() (err error) {
 	if err != nil {
 		return err
 	}
-	return mpm.startMinecraftServer()
+	return mpm.StartMinecraft()
 }
 
 func NewPluginManager() (pm *MinecraftPluginManager) {
@@ -474,11 +474,7 @@ func (mpm *MinecraftPluginManager) init() (err error) {
 func (mpm *MinecraftPluginManager) Dial(server string) (err error) {
 	mpm.init()
 	mpm.Address = server
-	conn, err := grpc.NewClient(mpm.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithKeepaliveParams(keepalive.ClientParameters{
-		Time:                10 * time.Second,
-		Timeout:             5 * time.Second,
-		PermitWithoutStream: true,
-	}))
+	conn, err := grpc.NewClient(mpm.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		mpm.kPrintln(color.RedString("无法连接上 Manager Backend，请检查 Backend 是否运行: %s", err.Error()))
 		return err

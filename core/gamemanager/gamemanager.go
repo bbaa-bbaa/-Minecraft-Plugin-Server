@@ -254,14 +254,17 @@ func (ms *ManagerServer) stopDetect() {
 	if ms.minecraftInstance.process != nil {
 		ms.minecraftInstance.process.Process.Wait()
 		ms.minecraftInstance.pty.Close()
+		ms.minecraftInstance.state = manager.MinecraftState_stopped
 		ms.messageBus <- &manager.MessageResponse{Type: "StateChange", Content: "GameServerStop"}
+		Println("服务器关闭")
 	}
 }
 
 func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (c *manager.StatusResponse, err error) {
-	if ms.minecraftInstance.process != nil {
+	if ms.minecraftInstance.state != manager.MinecraftState_stopped {
 		return nil, ErrMinecraftAlreadyRunning
 	}
+	ms.minecraftInstance.state = manager.MinecraftState_running
 	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]: 启动服务器: "), color.MagentaString(req.Path))
 	cmd := exec.Command(filepath.Clean(req.Path))
 
@@ -287,7 +290,6 @@ func (ms *ManagerServer) Start(ctx context.Context, req *manager.StartRequest) (
 	}
 	ms.minecraftInstance.process = cmd
 	ms.minecraftInstance.pty = mcpty
-	ms.minecraftInstance.state = manager.MinecraftState_running
 	ms.messageBus <- &manager.MessageResponse{Type: "StateChange", Content: "StartGameServer"}
 	if !ms.forwardWorker {
 		go ms.logForwardWorker()
@@ -351,7 +353,7 @@ func (ms *ManagerServer) Write(ctx context.Context, req *manager.WriteRequest) (
 		return nil, ErrNoLockAcquired
 	}
 	if ms.minecraftInstance.state != manager.MinecraftState_running {
-		return nil, ErrMinecraftAlreadyRunning
+		return nil, ErrMinecraftNotRunning
 	}
 	ms.writeLock.Lock(req.Client, true)
 	Println(color.YellowString("客户端["), color.GreenString("%d", req.Client.Id), color.YellowString("]向控制台写入[Seq: "), color.GreenString("%d", req.Id), color.YellowString("]: "), color.CyanString(req.Content))
@@ -428,13 +430,12 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 			Println(color.YellowString("服务器日志: "), color.CyanString(msg.message))
 		}
 	}()
-
-	ms.minecraftInstance.pty.Write([]byte("stop\n"))
-	ms.minecraftInstance.process.Process.Wait()
-	ms.minecraftInstance.pty.Close()
-	ms.forwardChannelLock.Lock()
-	close(message.channel)
-	ms.forwardChannelLock.Unlock()
+	if ms.minecraftInstance.state == manager.MinecraftState_running {
+		ms.minecraftInstance.pty.Write([]byte("stop\n"))
+		ms.minecraftInstance.process.Process.Wait()
+		ms.minecraftInstance.pty.Close()
+	}
+	ms.UnregisterForwardChannel(message)
 	return nil, nil
 }
 
