@@ -297,6 +297,5 @@ func (s *StatusPlugin) Start() {
 }
 
 func (s *StatusPlugin) Pause() {
-	s.Println("插件停止")
 	s.monitorTicker.Stop()
 }

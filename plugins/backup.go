@@ -40,134 +40,6 @@ type BackupPlugin_RollbackPending interface {
 	Start(caller *BackupPlugin)
 }
 
-type RollbackWorldPending struct {
-	player    string
-	cancel    *time.Timer
-	comfirm   *time.Ticker
-	countdown int
-	name      string
-	path      string
-	bp        *BackupPlugin
-	fstat     fs.FileInfo
-}
-
-func (rwp *RollbackWorldPending) Start(caller *BackupPlugin) {
-	var err error
-	rwp.bp = caller
-	rwp.path = filepath.Join(rwp.bp.Dest, "world", rwp.name)
-	rwp.fstat, err = os.Stat(rwp.path)
-	if err != nil {
-		rwp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: "找不到所请求的备份文件", Color: tellraw.Red},
-		})
-	}
-	rwp.bp.rollbackLock.RLock()
-	pd := rwp.bp.rollbackPending
-	rwp.bp.rollbackLock.RUnlock()
-	if pd != nil {
-		rwp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: "已有正在进行的回档请求", Color: tellraw.Red},
-		})
-		return
-	}
-	rwp.bp.rollbackLock.Lock()
-	rwp.bp.rollbackPending = rwp
-	rwp.bp.rollbackLock.Unlock()
-	rwp.cancel = time.AfterFunc(10*time.Second, func() {
-		rwp.Abort(rwp.player)
-	})
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: "======== ", Color: tellraw.Red},
-		{Text: "回档请求确认", Color: tellraw.Light_Purple},
-		{Text: " ========", Color: tellraw.Red},
-	})
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: "名称: ", Color: tellraw.Yellow},
-		{Text: rwp.name, Color: tellraw.Green},
-	})
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: "时间: ", Color: tellraw.Yellow},
-		{Text: rwp.fstat.ModTime().Format(time.RFC3339), Color: tellraw.Green},
-	})
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: "输入[", Color: tellraw.Yellow},
-		{Text: "!!backup confirm", Color: tellraw.Red,
-			ClickEvent: &tellraw.ClickEvent{
-				Action: tellraw.SuggestCommand,
-				Value:  "!!backup confirm",
-			},
-		},
-		{Text: "]继续 ", Color: tellraw.Yellow},
-		{Text: "点击[", Color: tellraw.Yellow},
-		{Text: "!!backup cancel", Color: tellraw.Red,
-			ClickEvent: &tellraw.ClickEvent{
-				Action: tellraw.RunCommand,
-				GoFunc: func(s string, i int) {
-					rwp.Abort(rwp.player)
-				},
-			},
-		},
-		{Text: "]取消", Color: tellraw.Yellow},
-	})
-}
-
-func (rwp *RollbackWorldPending) Execute() {
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
-		{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
-	})
-	for range rwp.comfirm.C {
-		rwp.countdown--
-		rwp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
-			{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
-		})
-		if rwp.countdown == 0 {
-			break
-		}
-	}
-	rwp.comfirm.Stop()
-	rwp.bp.backupLock.Lock()
-	defer rwp.bp.backupLock.Unlock()
-	rwp.bp.Println(color.RedString("回档："), color.YellowString(rwp.path))
-	rwp.bp.Println(color.RedString("关闭服务器"))
-	rwp.bp.pm.Stop()
-	rwp.bp.Println(color.RedString("释放存档"))
-	os.RemoveAll(rwp.bp.Source)
-	rwp.bp.Copy(rwp.path, rwp.bp.Source)
-	rwp.bp.Println(color.YellowString("重启服务器"))
-	rwp.bp.pm.StartMinecraft()
-
-	rwp.bp.rollbackLock.Lock()
-	rwp.bp.rollbackPending = nil
-	rwp.bp.rollbackLock.Unlock()
-	rwp.bp.Println(color.GreenString("回档流程结束"))
-}
-
-func (rwp *RollbackWorldPending) Comfirm(player string) {
-	rwp.cancel.Stop()
-	rwp.countdown = 10
-	rwp.comfirm = time.NewTicker(1 * time.Second)
-	go rwp.Execute()
-}
-
-func (rwp *RollbackWorldPending) Abort(player string) {
-	rwp.bp.rollbackLock.Lock()
-	rwp.bp.rollbackPending = nil
-	rwp.bp.rollbackLock.Unlock()
-	usercancel := rwp.cancel.Stop()
-	if rwp.comfirm == nil && !usercancel {
-		rwp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: "回档请求超时", Color: tellraw.Red},
-		})
-	} else if rwp.comfirm != nil {
-		rwp.comfirm.Stop()
-	}
-	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: "已取消本次回档请求", Color: tellraw.Red},
-	})
-}
-
 type BackupPlugin struct {
 	plugin.BasePlugin
 	Source                 string // Minecraft world source dir
@@ -267,6 +139,29 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 			return nil
 		})
 	}
+	bp.CleanupPlayerdataBackup()
+}
+
+func (bp *BackupPlugin) CleanupPlayerdataBackup() {
+	playerDir, _ := os.ReadDir(filepath.Join(bp.Dest, "playerdata"))
+	for _, playerSubDir := range playerDir {
+		dir := filepath.Join(bp.Dest, "playerdata", playerSubDir.Name())
+		backupFiles, _ := os.ReadDir(dir)
+		backupList := bp.getBackupList(backupFiles)
+		cleanList := backupList[min(len(backupList), 60):]
+		for _, name := range cleanList {
+			os.RemoveAll(filepath.Join(dir, name))
+		}
+	}
+}
+
+func (bp *BackupPlugin) CleanupBackup() {
+	backupFiles, _ := os.ReadDir(filepath.Join(bp.Dest, "world"))
+	backupList := bp.getBackupList(backupFiles)
+	cleanList := backupList[min(len(backupList), 60):]
+	for _, name := range cleanList {
+		os.RemoveAll(filepath.Join(bp.Dest, "world", name))
+	}
 }
 
 func (bp *BackupPlugin) MakeBackup(comment string) {
@@ -328,6 +223,7 @@ func (bp *BackupPlugin) MakeBackup(comment string) {
 		{Text: now.Format(time.RFC3339), Color: tellraw.Aqua, Bold: true},
 		{Text: " >>>", Color: tellraw.Aqua},
 	})
+	bp.CleanupBackup()
 }
 
 func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func(string) tellraw.GoFunc) {
@@ -402,17 +298,13 @@ func (bp *BackupPlugin) rollbackSelected(player string, name string) {
 	rollbackRequest.Start(bp)
 }
 
-func (bp *BackupPlugin) rollbackList(start string) {
-	bp.Println("rollbackList")
-	backupFiles, err := os.ReadDir(filepath.Join(bp.Dest, "world"))
-	if err != nil {
-		bp.TellrawError("@a", err)
-	}
-	if len(backupFiles) == 0 {
-		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
-		return
-	}
-	slices.SortFunc(backupFiles, func(a fs.DirEntry, b fs.DirEntry) int {
+func (bp *BackupPlugin) rollbackPlayerdataSelected(player string, name string) {
+	rollbackRequest := &RollbackPlayerdataPending{player: player, name: name}
+	rollbackRequest.Start(bp)
+}
+
+func (bp *BackupPlugin) getBackupList(dirEntry []fs.DirEntry) []string {
+	slices.SortFunc(dirEntry, func(a fs.DirEntry, b fs.DirEntry) int {
 		stata, err := a.Info()
 		if err != nil {
 			return 0
@@ -423,9 +315,59 @@ func (bp *BackupPlugin) rollbackList(start string) {
 		}
 		return statb.ModTime().Compare(stata.ModTime())
 	})
-	backupList := lo.Map(backupFiles, func(item fs.DirEntry, index int) string {
+	return lo.Map(dirEntry, func(item fs.DirEntry, index int) string {
 		return item.Name()
 	})
+}
+
+func (bp *BackupPlugin) rollbackPlayerdataList(player string, start string) {
+	pi, err := bp.GetPlayerInfo(player)
+	if err != nil {
+		bp.TellrawError("@a", err)
+		return
+	}
+	backupFiles, err := os.ReadDir(filepath.Join(bp.Dest, "playerdata", pi.UUID))
+	if err != nil {
+		bp.TellrawError("@a", err)
+		return
+	}
+	backupList := bp.getBackupList(backupFiles)
+	if len(backupList) == 0 {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
+		return
+	}
+	index := slices.Index(backupList, start)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(backupList) {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
+		return
+	}
+	bp.showList(backupList, index, min(len(backupList), index+BackupPlugin_PageSize), func(selected string) tellraw.GoFunc {
+		return func(triggerplayer string, i int) {
+			if triggerplayer != player {
+				bp.Tellraw(triggerplayer, []tellraw.Message{
+					{Text: "该列表仅能由请求回档的玩家进行选择", Color: tellraw.Red},
+				})
+				return
+			}
+			bp.rollbackPlayerdataSelected(player, selected)
+		}
+	})
+}
+
+func (bp *BackupPlugin) rollbackList(start string) {
+	backupFiles, err := os.ReadDir(filepath.Join(bp.Dest, "world"))
+	if err != nil {
+		bp.TellrawError("@a", err)
+		return
+	}
+	backupList := bp.getBackupList(backupFiles)
+	if len(backupList) == 0 {
+		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
+		return
+	}
 	index := slices.Index(backupList, start)
 	if index < 0 {
 		index = 0
@@ -487,8 +429,7 @@ func (bp *BackupPlugin) Cancel(player string) {
 
 func (bp *BackupPlugin) Cli(player string, args ...string) {
 	if len(args) == 0 {
-		bp.Tellraw("@a", []tellraw.Message{{Text: "未知的命令", Color: tellraw.Red}})
-		return
+		args = []string{"help"}
 	}
 	switch args[0] {
 	case "make":
@@ -504,10 +445,31 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 		} else {
 			bp.rollbackSelected(player, strings.Join(args[1:], " "))
 		}
+	case "rollbackplayerdata":
+		if len(args) < 2 {
+			bp.rollbackPlayerdataList(player, "")
+			return
+		} else {
+			bp.rollbackPlayerdataSelected(player, strings.Join(args[1:], " "))
+		}
 	case "cancel":
 		bp.Cancel(player)
 	case "confirm":
 		bp.Confirm(player)
+	default:
+		bp.Tellraw("@a", []tellraw.Message{
+			{Text: "可用命令如下:\n", Color: tellraw.Light_Purple},
+			{Text: "!!backup ", Color: tellraw.Red},
+			{Text: "make ", Color: tellraw.Yellow},
+			{Text: "<备注> ", Color: tellraw.Green},
+			{Text: "创建名为备注的备份\n", Color: tellraw.Light_Purple},
+			{Text: "!!backup ", Color: tellraw.Red},
+			{Text: "rollback ", Color: tellraw.Yellow},
+			{Text: "回档整个世界\n", Color: tellraw.Light_Purple},
+			{Text: "!!backup ", Color: tellraw.Red},
+			{Text: "rollbackplayerdata ", Color: tellraw.Yellow},
+			{Text: "回档当前玩家的数据", Color: tellraw.Light_Purple},
+		})
 	}
 
 }
