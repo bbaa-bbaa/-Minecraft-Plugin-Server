@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package plugins
 
 import (
@@ -33,7 +34,13 @@ import (
 	"github.com/shirou/gopsutil/v3/cpu"
 	load "github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v3/net"
 )
+
+type Status_NetStat struct {
+	time time.Time
+	stat net.IOCountersStat
+}
 
 type StatusPlugin struct {
 	plugin.BasePlugin
@@ -41,7 +48,10 @@ type StatusPlugin struct {
 	LastBroadcastMspt float64
 	LastMspt          []float64
 	ForgeTpsCommand   string
-	monitorTicker     *time.Ticker
+	monitorStop       chan struct{}
+	MaxSentBandwidth  float64 // Mbps
+	MaxRecvBandwidth  float64 // Mbps
+	lastnetStat       *Status_NetStat
 }
 
 type StatusPlugin_MinecraftLoad struct {
@@ -66,7 +76,7 @@ func (s *StatusPlugin) Init(pm pluginabi.PluginManager) (err error) {
 		return err
 	}
 	s.RegisterCommand("status", s.status)
-	s.updateStat()
+	s.monitorSystem()
 	return nil
 }
 
@@ -124,7 +134,43 @@ func (s *StatusPlugin) msptLevel(mspt float64) tellraw.Color {
 	return tellraw.Red
 }
 
-func (s *StatusPlugin) monitor() {
+func (s *StatusPlugin) monitorSystem() {
+	cpu.Percent(0, true)
+	now := time.Now()
+	netio, err := net.IOCounters(true)
+	if err != nil {
+		return
+	}
+	if s.lastnetStat != nil {
+		upSpeed := float64(netio[0].BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		downSpeed := float64(netio[0].BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		if (s.MaxSentBandwidth-upSpeed) < s.MaxSentBandwidth*0.2 || (s.MaxRecvBandwidth-downSpeed) < s.MaxRecvBandwidth*0.2 {
+			s.Tellraw(`@a`, []tellraw.Message{
+				{Text: "检测到网络带宽到达上限", Color: tellraw.Red},
+			})
+			s.Tellraw(`@a`, []tellraw.Message{
+				{Text: "地图加载可能出现延迟", Color: tellraw.Aqua},
+			})
+			s.Tellraw(`@a`, []tellraw.Message{
+				{Text: "网络负载: ", Color: tellraw.Aqua},
+				{Text: "上传: ", Color: tellraw.Yellow},
+				{Text: fmt.Sprintf("%.2f", upSpeed), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+				{Text: "Mbps↑", Color: tellraw.Light_Purple},
+				{Text: fmt.Sprintf("(%.2f%%)", upSpeed/s.MaxSentBandwidth*100), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+				{Text: " 下载: ", Color: tellraw.Yellow},
+				{Text: fmt.Sprintf("%.2f", downSpeed), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+				{Text: "Mbps↓", Color: tellraw.Light_Purple},
+				{Text: fmt.Sprintf("(%.2f%%)", downSpeed/s.MaxRecvBandwidth*100), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+			})
+		}
+	}
+	s.lastnetStat = &Status_NetStat{
+		time: now,
+		stat: netio[0],
+	}
+}
+
+func (s *StatusPlugin) monitorGame() {
 	load := s.getMinecraftLoad()
 	overall, ok := load["Overall"]
 	if !ok {
@@ -168,17 +214,10 @@ func (s *StatusPlugin) monitor() {
 			{Text: fmt.Sprintf(`%.2f%%`, overall.MSPT/50*100), Color: s.msptLevel(overall.MSPT)},
 		})
 	}
-
-	s.updateStat()
-}
-
-func (s *StatusPlugin) updateStat() {
-	// Update Cpuinfo
-	cpu.Percent(0, true)
 }
 
 func (s *StatusPlugin) status(player string, args ...string) {
-
+	now := time.Now()
 	s.Tellraw(`@a`, []tellraw.Message{{Text: "============ 系统负载 ============", Color: tellraw.Green}})
 	cpu_count, _ := cpu.Counts(true)
 	cpu_usage, err := cpu.Percent(0, true)
@@ -244,7 +283,26 @@ func (s *StatusPlugin) status(player string, args ...string) {
 			{Text: " MiB", Color: tellraw.Yellow},
 		})
 	}
-
+	netio, err := net.IOCounters(true)
+	if err == nil && s.lastnetStat != nil {
+		upSpeed := float64(netio[0].BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		downSpeed := float64(netio[0].BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		s.Tellraw(`@a`, []tellraw.Message{
+			{Text: "网络负载: ", Color: tellraw.Aqua},
+			{Text: "上传: ", Color: tellraw.Yellow},
+			{Text: fmt.Sprintf("%.2f", upSpeed), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+			{Text: "Mbps↑", Color: tellraw.Light_Purple},
+			{Text: fmt.Sprintf("(%.2f%%)", upSpeed/s.MaxSentBandwidth*100), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+			{Text: " 下载: ", Color: tellraw.Yellow},
+			{Text: fmt.Sprintf("%.2f", downSpeed), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+			{Text: "Mbps↓", Color: tellraw.Light_Purple},
+			{Text: fmt.Sprintf("(%.2f%%)", downSpeed/s.MaxRecvBandwidth*100), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+		})
+		s.lastnetStat = &Status_NetStat{
+			time: now,
+			stat: netio[0],
+		}
+	}
 	s.Tellraw(`@a`, []tellraw.Message{{Text: "============ 服务负载 ============", Color: tellraw.Green}})
 	minecraft_load := maps.Values(s.getMinecraftLoad())
 	slices.SortFunc(minecraft_load, func(a StatusPlugin_MinecraftLoad, b StatusPlugin_MinecraftLoad) int {
@@ -278,8 +336,18 @@ func (s *StatusPlugin) testTPSCommand() {
 }
 
 func (s *StatusPlugin) monitorWorker() {
-	for range s.monitorTicker.C {
-		s.monitor()
+	monitorTicker := time.NewTicker(10 * time.Second)
+	systemTicker := time.NewTicker(1 * time.Second)
+	closeChannel := make(chan struct{}, 1)
+	for {
+		select {
+		case <-monitorTicker.C:
+			s.monitorGame()
+		case <-systemTicker.C:
+			s.monitorSystem()
+		case <-closeChannel:
+			return
+		}
 	}
 }
 
@@ -287,15 +355,11 @@ func (s *StatusPlugin) Start() {
 	if s.ForgeTpsCommand == "" {
 		s.testTPSCommand()
 	}
-	if s.monitorTicker == nil {
-		s.monitorTicker = time.NewTicker(5 * time.Second)
-		go s.monitorWorker()
-	} else {
-		s.monitorTicker.Reset(5 * time.Second)
-	}
-
+	go s.monitorWorker()
 }
 
 func (s *StatusPlugin) Pause() {
-	s.monitorTicker.Stop()
+	if s.monitorStop != nil {
+		s.monitorStop <- struct{}{}
+	}
 }

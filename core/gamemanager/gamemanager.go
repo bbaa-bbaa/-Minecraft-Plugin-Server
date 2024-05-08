@@ -256,7 +256,7 @@ func (ms *ManagerServer) stopDetect() {
 		ms.minecraftInstance.pty.Close()
 		ms.minecraftInstance.state = manager.MinecraftState_stopped
 		ms.messageBus <- &manager.MessageResponse{Type: "StateChange", Content: "GameServerStop"}
-		Println("服务器关闭")
+		Println(color.RedString("服务器关闭"))
 	}
 }
 
@@ -471,7 +471,6 @@ func main() {
 			})
 		}
 
-		Println(color.RedString("服务器关闭"))
 		os.Exit(0)
 	}
 }

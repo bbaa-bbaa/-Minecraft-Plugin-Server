@@ -15,6 +15,8 @@
 package plugin
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"regexp"
@@ -106,7 +108,9 @@ func (sc *ScoreboardCore) ensureScoreboard(context pluginabi.PluginName, name st
 }
 
 func (sc *ScoreboardCore) getNamespace(context pluginabi.PluginName) string {
-	return fmt.Sprintf("%x", xxhash.Sum64String(context.Name()))[8:]
+	xhash := xxhash.Sum64String(context.Name())
+	bhash := binary.BigEndian.AppendUint64([]byte{}, xhash)
+	return base64.RawURLEncoding.EncodeToString(bhash[4:])[:5]
 }
 
 func (sc *ScoreboardCore) Name() string {
@@ -194,11 +198,13 @@ func (sc *ScoreboardCore) syncOneScore(context pluginabi.PluginName, player stri
 func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, goFunc ...tellraw.GoFunc) (name []string) {
 	triggername := ""
 	commandTransaction := []string{}
-	namespace := sc.getNamespace(context)[:4]
+	namespace := sc.getNamespace(context)
 	sc.tlock.Lock()
 	for _, triggerFunc := range goFunc {
 		for {
-			triggername = fmt.Sprintf("%s_mtrigger_%08x", namespace, rand.Uint32())
+			trigIdx := rand.Uint32()
+			btrigidx := binary.BigEndian.AppendUint32([]byte{}, trigIdx)
+			triggername = fmt.Sprintf("tri_%s_%s", namespace, base64.RawStdEncoding.EncodeToString(btrigidx))
 			if _, ok := sc.trigger[triggername]; !ok {
 				break
 			}
@@ -227,7 +233,7 @@ func (sc *ScoreboardCore) clearTrigger() {
 			return strings.Trim(strings.TrimSpace(item), "[]")
 		})
 		for _, trigger := range triggerStrList {
-			if strings.Contains(trigger, "_mtrigger_") {
+			if strings.Contains(trigger, "tri_") {
 				commandList = append(commandList, "scoreboard objectives remove "+trigger)
 			}
 		}
