@@ -38,8 +38,9 @@ import (
 )
 
 type Status_NetStat struct {
-	time time.Time
-	stat net.IOCountersStat
+	time         time.Time
+	stat         net.IOCountersStat
+	lastAnnounce time.Time
 }
 
 type StatusPlugin struct {
@@ -137,37 +138,72 @@ func (s *StatusPlugin) msptLevel(mspt float64) tellraw.Color {
 func (s *StatusPlugin) monitorSystem() {
 	cpu.Percent(0, true)
 	now := time.Now()
-	netio, err := net.IOCounters(true)
+	netio, err := s.getNetio()
 	if err != nil {
 		return
 	}
 	if s.lastnetStat != nil {
-		upSpeed := float64(netio[0].BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
-		downSpeed := float64(netio[0].BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		upSpeed := float64(netio.BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		downSpeed := float64(netio.BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
 		if (s.MaxSentBandwidth-upSpeed) < s.MaxSentBandwidth*0.2 || (s.MaxRecvBandwidth-downSpeed) < s.MaxRecvBandwidth*0.2 {
-			s.Tellraw(`@a`, []tellraw.Message{
-				{Text: "检测到网络带宽到达上限", Color: tellraw.Red},
-			})
-			s.Tellraw(`@a`, []tellraw.Message{
-				{Text: "地图加载可能出现延迟", Color: tellraw.Aqua},
-			})
-			s.Tellraw(`@a`, []tellraw.Message{
-				{Text: "网络负载: ", Color: tellraw.Aqua},
-				{Text: "上传: ", Color: tellraw.Yellow},
-				{Text: fmt.Sprintf("%.2f", upSpeed), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
-				{Text: "Mbps↑", Color: tellraw.Light_Purple},
-				{Text: fmt.Sprintf("(%.2f%%)", upSpeed/s.MaxSentBandwidth*100), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
-				{Text: " 下载: ", Color: tellraw.Yellow},
-				{Text: fmt.Sprintf("%.2f", downSpeed), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
-				{Text: "Mbps↓", Color: tellraw.Light_Purple},
-				{Text: fmt.Sprintf("(%.2f%%)", downSpeed/s.MaxRecvBandwidth*100), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
-			})
+			if now.Sub(s.lastnetStat.lastAnnounce).Seconds() > 30 {
+				fmt.Println(now.Sub(s.lastnetStat.lastAnnounce).Seconds())
+				s.lastnetStat.lastAnnounce = now
+				s.Tellraw(`@a`, []tellraw.Message{
+					{Text: "检测到网络带宽到达上限", Color: tellraw.Red},
+				})
+				s.Tellraw(`@a`, []tellraw.Message{
+					{Text: "地图加载可能出现延迟", Color: tellraw.Aqua},
+				})
+				s.Tellraw(`@a`, []tellraw.Message{
+					{Text: "网络负载: ", Color: tellraw.Aqua},
+				})
+				s.Tellraw(`@a`, []tellraw.Message{
+					{Text: "上传: ", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%.2f", upSpeed), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+					{Text: " Mbps", Color: tellraw.Yellow},
+					{Text: "↑", Color: tellraw.Aqua},
+					{Text: fmt.Sprintf("(%.2f%%)", upSpeed/s.MaxSentBandwidth*100), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
+				})
+				s.Tellraw(`@a`, []tellraw.Message{
+					{Text: "下载: ", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%.2f", downSpeed), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+					{Text: " Mbps", Color: tellraw.Yellow},
+					{Text: "↓", Color: tellraw.Aqua},
+					{Text: fmt.Sprintf("(%.2f%%)", downSpeed/s.MaxRecvBandwidth*100), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
+				})
+			}
+		}
+	} else {
+		s.lastnetStat = &Status_NetStat{
+			time: now,
+			stat: netio,
 		}
 	}
-	s.lastnetStat = &Status_NetStat{
-		time: now,
-		stat: netio[0],
+	s.lastnetStat.time = now
+	s.lastnetStat.stat = netio
+}
+
+func (s *StatusPlugin) getNetio() (o net.IOCountersStat, err error) {
+	netio, err := net.IOCounters(true)
+	if err != nil {
+		return
 	}
+	for _, nic := range netio {
+		if strings.HasPrefix(nic.Name, "eth") || strings.HasPrefix(nic.Name, "en") || strings.HasPrefix(nic.Name, "wl") {
+			o.BytesRecv += nic.BytesRecv
+			o.BytesRecv += nic.BytesRecv
+			o.PacketsRecv += nic.PacketsRecv
+			o.Errin += nic.Errin
+			o.Dropin += nic.Dropin
+			o.BytesSent += nic.BytesSent
+			o.PacketsSent += nic.PacketsSent
+			o.Errout += nic.Errout
+			o.Dropout += nic.Dropout
+		}
+	}
+	o.Name = "all"
+	return
 }
 
 func (s *StatusPlugin) monitorGame() {
@@ -283,25 +319,29 @@ func (s *StatusPlugin) status(player string, args ...string) {
 			{Text: " MiB", Color: tellraw.Yellow},
 		})
 	}
-	netio, err := net.IOCounters(true)
+	netio, err := s.getNetio()
 	if err == nil && s.lastnetStat != nil {
-		upSpeed := float64(netio[0].BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
-		downSpeed := float64(netio[0].BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		upSpeed := float64(netio.BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
+		downSpeed := float64(netio.BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
 		s.Tellraw(`@a`, []tellraw.Message{
 			{Text: "网络负载: ", Color: tellraw.Aqua},
+		})
+		s.Tellraw(`@a`, []tellraw.Message{
 			{Text: "上传: ", Color: tellraw.Yellow},
 			{Text: fmt.Sprintf("%.2f", upSpeed), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
-			{Text: "Mbps↑", Color: tellraw.Light_Purple},
+			{Text: " Mbps", Color: tellraw.Yellow},
+			{Text: "↑", Color: tellraw.Aqua},
 			{Text: fmt.Sprintf("(%.2f%%)", upSpeed/s.MaxSentBandwidth*100), Color: s.floatLevel(upSpeed / s.MaxSentBandwidth)},
-			{Text: " 下载: ", Color: tellraw.Yellow},
+		})
+		s.Tellraw(`@a`, []tellraw.Message{
+			{Text: "下载: ", Color: tellraw.Yellow},
 			{Text: fmt.Sprintf("%.2f", downSpeed), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
-			{Text: "Mbps↓", Color: tellraw.Light_Purple},
+			{Text: " Mbps", Color: tellraw.Yellow},
+			{Text: "↓", Color: tellraw.Aqua},
 			{Text: fmt.Sprintf("(%.2f%%)", downSpeed/s.MaxRecvBandwidth*100), Color: s.floatLevel(downSpeed / s.MaxRecvBandwidth)},
 		})
-		s.lastnetStat = &Status_NetStat{
-			time: now,
-			stat: netio[0],
-		}
+		s.lastnetStat.time = now
+		s.lastnetStat.stat = netio
 	}
 	s.Tellraw(`@a`, []tellraw.Message{{Text: "============ 服务负载 ============", Color: tellraw.Green}})
 	minecraft_load := maps.Values(s.getMinecraftLoad())

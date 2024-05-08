@@ -171,9 +171,12 @@ func (pi *PlayerInfo) getPlayerName(uuid string) (player string, err error) {
 	if ok {
 		return player, nil
 	}
-	playerScorelist := pi.RunCommand(fmt.Sprintf("scoreboard players list %s", uuid))
-	player, _, ok = strings.Cut(playerScorelist, " ")
-	if !ok {
+	playerEntitydata := pi.RunCommand(fmt.Sprintf("data get entity %s", uuid))
+	if !strings.Contains(playerEntitydata, "entity data") {
+		return "", fmt.Errorf("not found")
+	}
+	player, _, ok = strings.Cut(playerEntitydata, " ")
+	if !ok || player == uuid {
 		return "", fmt.Errorf("not found")
 	}
 	pi.data.uuidMapLock.Lock()

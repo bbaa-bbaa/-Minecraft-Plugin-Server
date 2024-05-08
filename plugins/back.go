@@ -28,7 +28,7 @@ import (
 	"github.com/fatih/color"
 )
 
-var DeathEventLog = regexp.MustCompile(`MinecraftServer.*\]: (\w+) [\w ]+$`)
+var DeathEventLog = regexp.MustCompile(`\[.*\]: (\w+) [\w ]+$`)
 
 var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile("has made the advancement")}
 
