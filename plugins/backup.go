@@ -50,6 +50,8 @@ type BackupPlugin struct {
 	rollbackPending        BackupPlugin_RollbackPending
 	backupPlayerdataTicker *time.Ticker
 	pm                     pluginabi.PluginManager
+	ExtPlayerdataDir       []string
+	ExtPlayerdataExt       []string
 }
 
 func (bp *BackupPlugin) DisplayName() string {
@@ -75,11 +77,13 @@ func (bp *BackupPlugin) SaveSize(src string) (int64, error) {
 }
 
 func (bp *BackupPlugin) MakePlayerDataBackup() {
-	playerdataDir := []string{"playerdata", "advancements", "stats"}
 	playerdataMtime := map[string]time.Time{}
+	playerdataDir := append([]string{"playerdata", "advancements", "stats"}, bp.ExtPlayerdataDir...)
+	dataExt := append([]string{".json", ".dat"}, bp.ExtPlayerdataExt...)
 	backupUUID := []string{}
 	for _, subdir := range playerdataDir {
-		dir := filepath.Join(bp.Source, subdir)
+		sd := filepath.SplitList(subdir)
+		dir := filepath.Join(append([]string{bp.Source}, sd...)...)
 		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -89,8 +93,7 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 			}
 			ext := filepath.Ext(path)
 			uuid := strings.TrimSuffix(filepath.Base(path), ext)
-			switch ext {
-			case ".json", ".dat":
+			if slices.Contains(dataExt, ext) {
 				fi, err := d.Info()
 				mt := fi.ModTime()
 				if err == nil {
@@ -117,7 +120,8 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 		pi.PutExtra(bp, mtime)
 	}
 	for _, subdir := range playerdataDir {
-		dir := filepath.Join(bp.Source, subdir)
+		sd := filepath.SplitList(subdir)
+		dir := filepath.Join(append([]string{bp.Source}, sd...)...)
 		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -130,14 +134,18 @@ func (bp *BackupPlugin) MakePlayerDataBackup() {
 			if !slices.Contains(backupUUID, uuid) {
 				return nil
 			}
-			switch ext {
-			case ".json", ".dat":
+			if slices.Contains(dataExt, ext) {
 				dest := filepath.Join(bp.Dest, "playerdata", uuid, playerdataMtime[uuid].Format("2006_01_02_15_04_05"), subdir)
 				os.MkdirAll(dest, 0755)
 				bp.Copy(path, dest)
 			}
 			return nil
 		})
+	}
+	for _, uuid := range backupUUID {
+		mtime := playerdataMtime[uuid]
+		dest := filepath.Join(bp.Dest, "playerdata", uuid, mtime.Format("2006_01_02_15_04_05"))
+		os.Chtimes(dest, mtime, mtime)
 	}
 	bp.CleanupPlayerdataBackup()
 }
@@ -476,6 +484,7 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 
 func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 	bp.pm = pm
+
 	bp.cron, _ = gocron.NewScheduler()
 	bp.cron.NewJob(gocron.CronJob("*/30 * * * *", false), gocron.NewTask(func() {
 		bp.MakeBackup("AutoBackup")

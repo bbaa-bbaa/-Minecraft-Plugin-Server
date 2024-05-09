@@ -34,11 +34,16 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+type MinecraftTrigger struct {
+	trigger    func(player string, value int)
+	createTime time.Time
+}
+
 type ScoreboardCore struct {
 	BasePlugin
 	score       map[string]map[string]int64
 	scorelist   []string
-	trigger     map[string]func(player string, value int)
+	trigger     map[string]*MinecraftTrigger
 	triggerInfo *regexp.Regexp
 	tlock       sync.RWMutex
 	lock        sync.RWMutex
@@ -48,10 +53,21 @@ type ScoreboardCore struct {
 func (sc *ScoreboardCore) Init(pm pluginabi.PluginManager) error {
 	sc.BasePlugin.Init(pm, sc)
 	sc.score = make(map[string]map[string]int64)
-	sc.trigger = map[string]func(player string, value int){}
+	sc.trigger = make(map[string]*MinecraftTrigger)
 	sc.triggerInfo = regexp.MustCompile(`.*?\]:(?: \[[^\]]+\])? ?\[(\w+): ?Triggered ?\[(.*?)\] ?(?:\(set value to (\d+)\)|\(added (\d+) to value\))?\]`)
 	pm.RegisterLogProcesser(sc, sc.processTrigger)
 	return nil
+}
+
+func (sc *ScoreboardCore) cleanExpiredTrigger() {
+	sc.tlock.RLock()
+	defer sc.tlock.RUnlock()
+	now := time.Now()
+	for key, value := range sc.trigger {
+		if now.Sub(value.createTime).Hours() > 1 {
+			delete(sc.trigger, key)
+		}
+	}
 }
 
 func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
@@ -71,12 +87,13 @@ func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
 		value = int(parsedvalue)
 	}
 	sc.tlock.RLock()
-	triggerFunc, ok := sc.trigger[trigger]
+	triggerEntry, ok := sc.trigger[trigger]
 	sc.tlock.RUnlock()
 	if ok {
 		sc.RunCommand(fmt.Sprintf("scoreboard players enable @a %s", trigger))
-		go triggerFunc(player, value)
+		go triggerEntry.trigger(player, value)
 	}
+	sc.cleanExpiredTrigger()
 }
 
 func (sc *ScoreboardCore) ensureScoreboard(context pluginabi.PluginName, name string, criterion string, displayname string) {
@@ -204,12 +221,12 @@ func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, goFunc .
 		for {
 			trigIdx := rand.Uint32()
 			btrigidx := binary.BigEndian.AppendUint32([]byte{}, trigIdx)
-			triggername = fmt.Sprintf("tri_%s_%s", namespace, base64.RawStdEncoding.EncodeToString(btrigidx))
+			triggername = fmt.Sprintf("tri_%s_%s", namespace, base64.RawURLEncoding.EncodeToString(btrigidx))
 			if _, ok := sc.trigger[triggername]; !ok {
 				break
 			}
 		}
-		sc.trigger[triggername] = triggerFunc
+		sc.trigger[triggername] = &MinecraftTrigger{trigger: triggerFunc, createTime: time.Now()}
 		name = append(name, triggername)
 		commandTransaction = append(commandTransaction, fmt.Sprintf("scoreboard objectives add %s trigger", triggername), fmt.Sprintf("scoreboard players enable @a %s", triggername))
 	}

@@ -21,5 +21,5 @@ import (
 )
 
 func (bp *BackupPlugin) Copy(src string, dst string) error {
-	return cp.Copy(src, dst)
+	return cp.Copy(src, dst, cp.Options{PreserveTimes: true})
 }

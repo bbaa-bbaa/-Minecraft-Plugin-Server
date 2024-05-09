@@ -33,10 +33,22 @@ func (bp *BackupPlugin) Copy(src string, dst string) (err error) {
 	dstStat, err := os.Stat(dst)
 	if !srcStat.IsDir() {
 		if err == nil && dstStat.IsDir() {
-			return reflink.Auto(src, filepath.Join(dst, filepath.Base(src)))
+			err = reflink.Auto(src, filepath.Join(dst, filepath.Base(src)))
 		} else {
-			return reflink.Auto(src, dst)
+			dstDir := filepath.Dir(dst)
+			_, err = os.Stat(dstDir)
+			if errors.Is(err, os.ErrNotExist) {
+				err = os.MkdirAll(dstDir, 0755)
+				if err != nil {
+					return err
+				}
+			}
+			err = reflink.Auto(src, dst)
 		}
+		if err != nil {
+			return err
+		}
+		os.Chtimes(dst, srcStat.ModTime(), srcStat.ModTime())
 	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -62,7 +74,7 @@ func (bp *BackupPlugin) Copy(src string, dst string) (err error) {
 		if sourceStat.IsDir() {
 			if _, err := os.Stat(dest); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					err = os.MkdirAll(dest, 0755)
+					err = os.Mkdir(dest, 0755)
 					if err != nil {
 						return err
 					}
@@ -71,12 +83,14 @@ func (bp *BackupPlugin) Copy(src string, dst string) (err error) {
 				}
 			}
 			bp.Copy(source, dest)
+			os.Chtimes(dest, sourceStat.ModTime(), sourceStat.ModTime())
 			continue
 		}
 		err = reflink.Auto(source, dest)
 		if err != nil {
 			return err
 		}
+		os.Chtimes(dest, sourceStat.ModTime(), sourceStat.ModTime())
 	}
 	return nil
 }

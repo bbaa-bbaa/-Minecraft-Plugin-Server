@@ -30,6 +30,7 @@ import (
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"golang.org/x/exp/maps"
 
+	"github.com/fatih/color"
 	"github.com/samber/lo"
 	"github.com/shirou/gopsutil/v3/cpu"
 	load "github.com/shirou/gopsutil/v3/load"
@@ -146,8 +147,8 @@ func (s *StatusPlugin) monitorSystem() {
 		upSpeed := float64(netio.BytesSent-s.lastnetStat.stat.BytesSent) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
 		downSpeed := float64(netio.BytesRecv-s.lastnetStat.stat.BytesRecv) * 8.0 / float64(now.Sub(s.lastnetStat.time).Seconds()) / 1024.0 / 1024.0
 		if (s.MaxSentBandwidth-upSpeed) < s.MaxSentBandwidth*0.2 || (s.MaxRecvBandwidth-downSpeed) < s.MaxRecvBandwidth*0.2 {
-			if now.Sub(s.lastnetStat.lastAnnounce).Seconds() > 30 {
-				fmt.Println(now.Sub(s.lastnetStat.lastAnnounce).Seconds())
+			if now.Sub(s.lastnetStat.lastAnnounce).Seconds() > 30 && now.Sub(s.lastnetStat.time).Milliseconds() > 500 {
+				s.Println(color.RedString("网络过载："), color.MagentaString("%.2f", upSpeed), color.YellowString(" Mbps↑ "), color.MagentaString("%.2f", downSpeed), color.YellowString(" Mbps↓"))
 				s.lastnetStat.lastAnnounce = now
 				s.Tellraw(`@a`, []tellraw.Message{
 					{Text: "检测到网络带宽到达上限", Color: tellraw.Red},
