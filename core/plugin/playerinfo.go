@@ -22,10 +22,10 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/fatih/color"
@@ -126,7 +126,6 @@ func (s *PlayerInfo_Storage) RUnlock() {
 
 type PlayerInfo struct {
 	BasePlugin
-	updateTicker   *time.Ticker
 	playerList     []string
 	playerListLock sync.RWMutex
 	data           *PlayerInfo_Storage
@@ -304,7 +303,7 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 func (pi *PlayerInfo) GetPlayerList() []string {
 	pi.playerListLock.RLock()
 	defer pi.playerListLock.RUnlock()
-	return pi.playerList
+	return slices.Clone(pi.playerList)
 }
 
 func (pi *PlayerInfo) updatePlayerList() {
@@ -313,32 +312,19 @@ func (pi *PlayerInfo) updatePlayerList() {
 	if len(playerlistSplitText) == 2 {
 		playerList := strings.Split(strings.TrimSpace(playerlistSplitText[1]), ",")
 		pi.playerListLock.Lock()
-		pi.playerList = lo.Map(playerList, func(players string, index int) string {
-			return strings.TrimSpace(players)
+		pi.playerList = lo.FilterMap(playerList, func(players string, index int) (string, bool) {
+			player := strings.TrimSpace(players)
+			return player, player != ""
 		})
 		pi.playerListLock.Unlock()
 	}
 }
 
-func (pi *PlayerInfo) updatePlayerWorker() {
-	for range pi.updateTicker.C {
-		pi.updatePlayerList()
-	}
-}
-
 func (pi *PlayerInfo) Start() {
-	if pi.updateTicker == nil {
-		pi.updateTicker = time.NewTicker(60 * time.Second)
-		go pi.updatePlayerWorker()
-	} else {
-		pi.updateTicker.Reset(60 * time.Second)
-	}
-
 	pi.updatePlayerList()
 }
 
 func (pi *PlayerInfo) Pause() {
-	pi.updateTicker.Stop()
 }
 
 func (pi *PlayerInfo) Name() string {

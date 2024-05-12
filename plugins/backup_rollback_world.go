@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
@@ -34,6 +35,7 @@ type RollbackWorldPending struct {
 	path      string
 	bp        *BackupPlugin
 	fstat     fs.FileInfo
+	lock      sync.Mutex
 }
 
 func (rwp *RollbackWorldPending) Start(caller *BackupPlugin) {
@@ -130,10 +132,17 @@ func (rwp *RollbackWorldPending) Execute() {
 	rwp.bp.rollbackLock.Lock()
 	rwp.bp.rollbackPending = nil
 	rwp.bp.rollbackLock.Unlock()
+	rwp.lock.Unlock()
 	rwp.bp.Println(color.GreenString("回档流程结束"))
 }
 
 func (rwp *RollbackWorldPending) Comfirm(player string) {
+	if !rwp.lock.TryLock() {
+		rwp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: "请勿多次执行", Color: tellraw.Red},
+		})
+		return
+	}
 	rwp.cancel.Stop()
 	rwp.countdown = 10
 	rwp.comfirm = time.NewTicker(1 * time.Second)

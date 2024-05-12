@@ -379,14 +379,18 @@ func (s *StatusPlugin) testTPSCommand() {
 func (s *StatusPlugin) monitorWorker() {
 	monitorTicker := time.NewTicker(10 * time.Second)
 	systemTicker := time.NewTicker(1 * time.Second)
-	closeChannel := make(chan struct{}, 1)
+	s.monitorStop = make(chan struct{}, 1)
 	for {
 		select {
 		case <-monitorTicker.C:
-			s.monitorGame()
+			if len(s.GetPlayerList()) > 0 {
+				s.monitorGame()
+			}
 		case <-systemTicker.C:
-			s.monitorSystem()
-		case <-closeChannel:
+			if len(s.GetPlayerList()) > 0 {
+				s.monitorSystem()
+			}
+		case <-s.monitorStop:
 			return
 		}
 	}

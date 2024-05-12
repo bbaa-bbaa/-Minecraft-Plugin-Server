@@ -487,7 +487,9 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 
 	bp.cron, _ = gocron.NewScheduler()
 	bp.cron.NewJob(gocron.CronJob("*/30 * * * *", false), gocron.NewTask(func() {
-		bp.MakeBackup("AutoBackup")
+		if len(bp.GetPlayerList()) > 0 {
+			bp.MakeBackup("AutoBackup")
+		}
 	}), gocron.WithSingletonMode(gocron.LimitModeReschedule))
 	err = bp.BasePlugin.Init(pm, bp)
 	if err != nil {
@@ -503,7 +505,9 @@ func (bp *BackupPlugin) Start() {
 		bp.backupPlayerdataTicker = time.NewTicker(60 * time.Second)
 		go func() {
 			for range bp.backupPlayerdataTicker.C {
-				bp.MakePlayerDataBackup()
+				if len(bp.GetPlayerList()) > 0 {
+					bp.MakePlayerDataBackup()
+				}
 			}
 		}()
 	} else {

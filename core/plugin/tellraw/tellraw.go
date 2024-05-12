@@ -101,7 +101,8 @@ var (
 
 type GoFunc func(string, int)
 type ClickEvent struct {
-	Action ClickEvent_Action `json:"action"`
-	Value  string            `json:"value"`
-	GoFunc GoFunc            `json:"-"`
+	Action      ClickEvent_Action `json:"action"`
+	Value       string            `json:"value"`
+	GoFunc      GoFunc            `json:"-"`
+	TriggerTime int64             `json:"-"`
 }

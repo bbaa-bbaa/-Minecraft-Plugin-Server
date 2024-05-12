@@ -89,18 +89,18 @@ func (bp *BasePlugin) EnsureScoreboard(name string, criterion string, displayNam
 	bp.scoreboardCore.ensureScoreboard(bp.p, name, criterion, dName)
 }
 
-func (bp *BasePlugin) RegisterTrigger(goFunc tellraw.GoFunc) (name string) {
+func (bp *BasePlugin) RegisterTrigger(trigger MinecraftTrigger) (name string) {
 	if bp.scoreboardCore == nil {
 		return
 	}
-	return bp.scoreboardCore.registerTrigger(bp.p, goFunc)[0]
+	return bp.scoreboardCore.registerTrigger(bp.p, trigger)[0]
 }
 
-func (bp *BasePlugin) RegisterTriggerBatch(goFunc ...tellraw.GoFunc) (name []string) {
+func (bp *BasePlugin) RegisterTriggerBatch(trigger ...MinecraftTrigger) (name []string) {
 	if bp.scoreboardCore == nil {
 		return
 	}
-	return bp.scoreboardCore.registerTrigger(bp.p, goFunc...)
+	return bp.scoreboardCore.registerTrigger(bp.p, trigger...)
 }
 
 func (bp *BasePlugin) DisplayScoreboard(name string, slot string) {

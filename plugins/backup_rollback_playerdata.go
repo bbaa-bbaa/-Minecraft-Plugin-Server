@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
@@ -36,6 +37,7 @@ type RollbackPlayerdataPending struct {
 	path      string
 	bp        *BackupPlugin
 	fstat     fs.FileInfo
+	lock      sync.Mutex
 }
 
 func (rpp *RollbackPlayerdataPending) Start(caller *BackupPlugin) {
@@ -140,6 +142,7 @@ func (rpp *RollbackPlayerdataPending) Execute() {
 	rpp.bp.rollbackLock.Lock()
 	rpp.bp.rollbackPending = nil
 	rpp.bp.rollbackLock.Unlock()
+	rpp.lock.Unlock()
 	rpp.bp.Println(color.GreenString("回档流程结束"))
 }
 
@@ -147,6 +150,12 @@ func (rpp *RollbackPlayerdataPending) Comfirm(player string) {
 	if player != rpp.player {
 		rpp.bp.Tellraw(player, []tellraw.Message{
 			{Text: "该请求只能由发起请求的玩家确认", Color: tellraw.Red},
+		})
+		return
+	}
+	if !rpp.lock.TryLock() {
+		rpp.bp.Tellraw("@a", []tellraw.Message{
+			{Text: "请勿多次执行", Color: tellraw.Red},
 		})
 		return
 	}

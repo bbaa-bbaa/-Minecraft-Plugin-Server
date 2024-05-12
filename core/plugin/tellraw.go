@@ -59,12 +59,12 @@ func (tm *TellrawManager) cleanUp(msg []tellraw.Message) (out []tellraw.Message)
 	return out
 }
 
-func (tm *TellrawManager) clickTriggerWrapper(p pluginabi.PluginName, msg []tellraw.Message) []tellraw.Message {
+func (tm *TellrawManager) clickTriggerWrapper(p pluginabi.PluginName, Selector string, msg []tellraw.Message) []tellraw.Message {
 	triggerValueList := []*string{}
-	triggerFuncList := []tellraw.GoFunc{}
+	triggerFuncList := []MinecraftTrigger{}
 	for i := range msg {
 		if msg[i].ClickEvent != nil && msg[i].ClickEvent.Action == tellraw.RunCommand && msg[i].ClickEvent.GoFunc != nil {
-			triggerFuncList = append(triggerFuncList, msg[i].ClickEvent.GoFunc)
+			triggerFuncList = append(triggerFuncList, MinecraftTrigger{Trigger: msg[i].ClickEvent.GoFunc, Time: msg[i].ClickEvent.TriggerTime, Selector: Selector})
 			triggerValueList = append(triggerValueList, &msg[i].ClickEvent.Value)
 		}
 	}
@@ -84,7 +84,7 @@ func (tm *TellrawManager) Tellraw(p pluginabi.PluginName, Target string, msg []t
 		{Text: "] ", Color: tellraw.Yellow, Bold: true},
 	}, msg...)
 	msg = tm.cleanUp(msg)
-	msg = tm.clickTriggerWrapper(p, msg)
+	msg = tm.clickTriggerWrapper(p, Target, msg)
 	jsonMsg, _ := json.Marshal(msg)
 	tm.RunCommand(fmt.Sprintf("tellraw %s %s", Target, jsonMsg))
 }

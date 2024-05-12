@@ -201,9 +201,6 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 			ClickEvent: &tellraw.ClickEvent{
 				Action: tellraw.RunCommand,
 				GoFunc: func(tplayer string, i int) {
-					if player != tplayer {
-						return
-					}
 					hp.home(player, home)
 				},
 			},
