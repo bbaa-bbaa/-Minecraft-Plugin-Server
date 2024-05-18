@@ -59,6 +59,20 @@ type MinecraftPlayerInfo struct {
 	playerInfo   *PlayerInfo
 }
 
+func (mpi *MinecraftPlayerInfo) MarshalJSON() ([]byte, error) {
+	mpi.lock.RLock()
+	defer mpi.lock.RUnlock()
+	type playerinfo struct {
+		Player       string
+		Location     *MinecraftPosition
+		LastLocation *MinecraftPosition
+		UUID         string
+		Extra        MinecraftPlayerInfo_Extra
+	}
+	pi := playerinfo{mpi.Player, mpi.Location, mpi.LastLocation, mpi.UUID, mpi.Extra}
+	return json.Marshal(pi)
+}
+
 func (mpi *MinecraftPlayerInfo) Commit() error {
 	mpi.lock.RLock()
 	defer mpi.lock.RUnlock()
@@ -354,13 +368,7 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 		return fmt.Errorf("无玩家信息")
 	}
 	pi.data.RLock()
-	for _, val := range pi.data.PlayerInfo {
-		val.lock.RLock()
-	}
 	saveData, err := json.MarshalIndent(pi.data, "", "\t")
-	for _, val := range pi.data.PlayerInfo {
-		val.lock.RUnlock()
-	}
 	pi.data.RUnlock()
 	if err != nil {
 		return err

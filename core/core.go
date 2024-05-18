@@ -356,11 +356,14 @@ func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
 }
 
 func (mpm *MinecraftPluginManager) initDelayedPlugin() {
-	mpm.pluginLock.RLock()
-	for _, pm := range mpm.delayinitPlugins {
+	mpm.pluginLock.Lock()
+	plugins := slices.Clone(mpm.delayinitPlugins)
+	mpm.delayinitPlugins = nil
+	mpm.pluginLock.Unlock()
+	for _, pm := range plugins {
 		pm.Init(mpm)
 	}
-	mpm.pluginLock.RUnlock()
+
 	mpm.pluginLock.Lock()
 	mpm.delayinitPlugins = nil
 	mpm.pluginLock.Unlock()

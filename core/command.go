@@ -146,10 +146,6 @@ func (mc *MinecraftCommandProcessor) Worker() {
 				break cmdReceiver
 			}
 		}
-		if len(responseReceiver) > 0 {
-			for range responseReceiver {
-			}
-		}
 		mc.receiverLock.Lock()
 		mc.responeReceivers = nil
 		mc.cleanSignal = nil
@@ -187,6 +183,6 @@ func (mc *MinecraftCommandProcessor) Pause() {
 	mc.receiverLock.RLock()
 	defer mc.receiverLock.RUnlock()
 	if mc.cleanSignal != nil {
-		close(mc.cleanSignal)
+		mc.cleanSignal <- struct{}{}
 	}
 }
