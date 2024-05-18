@@ -165,6 +165,7 @@ func (ms *ManagerServer) logForwardWorker() {
 		return
 	}
 	scanner := bufio.NewScanner(ms.minecraftInstance.pty)
+	scanner.Buffer(make([]byte, 1048576), 1048576)
 	for scanner.Scan() {
 		line := scanner.Text()
 		ms.writeLock.clientLock.RLock()
@@ -181,6 +182,10 @@ func (ms *ManagerServer) logForwardWorker() {
 			}
 		}
 		ms.forwardChannelLock.RUnlock()
+	}
+	err := scanner.Err()
+	if err != nil {
+		Println(color.RedString("scanner 意外关闭:%v", err))
 	}
 	ms.forwardWorker = false
 }
