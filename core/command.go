@@ -74,27 +74,29 @@ func (mc *MinecraftCommandProcessor) Worker() {
 	for cmd := range mc.queue {
 		var waitRegex *regexp.Regexp
 		var isWaitRegex bool
+		var responseReceiver chan string
+		var cleanSignal chan struct{}
 		commandBuffer := make([]string, 0, 32)
 		_, err := mc.managerClient.Lock()
 		if err != nil {
 			cmd.response <- ""
-			mc.responeReceivers = nil
 			mc.managerClient.Unlock()
 			mc.index++
 			continue
 		}
-		responseReceiver := make(chan string, 32)
-		mc.receiverLock.Lock()
-		mc.responeReceivers = responseReceiver
-		mc.receiverLock.Unlock()
 		cmd.command = strings.TrimLeft(cmd.command, "/")
 		command := strings.Split(cmd.command, " ")[0]
 		mc.Println(color.YellowString("正在执行命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 队列中剩余: "), color.RedString("%d", len(mc.queue)))
-		mc.managerClient.Write(&manager.WriteRequest{Id: mc.index, Content: cmd.command})
-		if slices.Index(SkipWaitCommand, command) >= 0 {
+		if slices.Index(SkipWaitCommand, command) < 0 {
+			responseReceiver = make(chan string, 32)
 			mc.receiverLock.Lock()
-			mc.responeReceivers = nil
+			mc.responeReceivers = responseReceiver
+			cleanSignal = make(chan struct{})
+			mc.cleanSignal = cleanSignal
 			mc.receiverLock.Unlock()
+			mc.managerClient.Write(&manager.WriteRequest{Id: mc.index, Content: cmd.command})
+		} else {
+			mc.managerClient.Write(&manager.WriteRequest{Id: mc.index, Content: cmd.command})
 			cmd.response <- ""
 			mc.managerClient.Unlock()
 			mc.index++
@@ -129,8 +131,7 @@ func (mc *MinecraftCommandProcessor) Worker() {
 					commandBuffer = append(commandBuffer, match[1])
 					if !isWaitRegex {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
-					}
-					if isWaitRegex && waitRegex.MatchString(match[1]) {
+					} else if waitRegex.MatchString(match[1]) {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 						endCommandTimer = time.NewTimer(10*time.Millisecond + time.Duration(10*queue)*time.Millisecond)
 						endCommandChannel = endCommandTimer.C
@@ -138,8 +139,10 @@ func (mc *MinecraftCommandProcessor) Worker() {
 					}
 				}
 			case <-endCommandChannel:
+				mc.Println(color.BlueString("命令执行结束"), color.YellowString("["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command))
 				break cmdReceiver
-			case <-mc.cleanSignal:
+			case <-cleanSignal:
+				mc.Println(color.RedString("清理未完成的命令: "), color.YellowString(command))
 				break cmdReceiver
 			}
 		}
@@ -149,9 +152,12 @@ func (mc *MinecraftCommandProcessor) Worker() {
 		}
 		mc.receiverLock.Lock()
 		mc.responeReceivers = nil
+		mc.cleanSignal = nil
 		mc.receiverLock.Unlock()
 		renewLockTicker.Stop()
-		endCommandTimer.Stop()
+		if endCommandTimer != nil {
+			endCommandTimer.Stop()
+		}
 		cmd.response <- strings.Join(commandBuffer, "\n")
 		mc.managerClient.Unlock()
 		mc.index++
@@ -162,7 +168,6 @@ func (mc *MinecraftCommandProcessor) Init(mpm pluginabi.PluginManager) error {
 	mc.managerClient = mpm.(*MinecraftPluginManager)
 	mpm.RegisterLogProcesser(mc, mc.commandResponeProcessor)
 	mc.queue = make(chan *MinecraftCommandRequest, 16384)
-	mc.cleanSignal = make(chan struct{}, 1)
 	go mc.Worker()
 	return nil
 }
@@ -179,8 +184,9 @@ func (mc *MinecraftCommandProcessor) Start() {
 }
 
 func (mc *MinecraftCommandProcessor) Pause() {
-	select {
-	case mc.cleanSignal <- struct{}{}:
-	default:
+	mc.receiverLock.RLock()
+	defer mc.receiverLock.RUnlock()
+	if mc.cleanSignal != nil {
+		close(mc.cleanSignal)
 	}
 }

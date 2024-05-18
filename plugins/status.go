@@ -192,13 +192,12 @@ func (s *StatusPlugin) getNetio() (o net.IOCountersStat, err error) {
 	}
 	for _, nic := range netio {
 		if strings.HasPrefix(nic.Name, "eth") || strings.HasPrefix(nic.Name, "en") || strings.HasPrefix(nic.Name, "wl") {
-			o.BytesRecv += nic.BytesRecv
-			o.BytesRecv += nic.BytesRecv
+			o.PacketsSent += nic.PacketsSent
 			o.PacketsRecv += nic.PacketsRecv
 			o.Errin += nic.Errin
 			o.Dropin += nic.Dropin
+			o.BytesRecv += nic.BytesRecv
 			o.BytesSent += nic.BytesSent
-			o.PacketsSent += nic.PacketsSent
 			o.Errout += nic.Errout
 			o.Dropout += nic.Dropout
 		}

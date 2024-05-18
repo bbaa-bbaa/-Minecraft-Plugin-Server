@@ -55,20 +55,20 @@ type MinecraftPlayerInfo struct {
 	LastLocation *MinecraftPosition
 	UUID         string
 	Extra        MinecraftPlayerInfo_Extra
-	extraLock    sync.RWMutex
+	lock         sync.RWMutex
 	playerInfo   *PlayerInfo
 }
 
 func (mpi *MinecraftPlayerInfo) Commit() error {
-	mpi.extraLock.RLock()
-	defer mpi.extraLock.RUnlock()
+	mpi.lock.RLock()
+	defer mpi.lock.RUnlock()
 	return mpi.playerInfo.Commit(mpi)
 }
 
 func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) error {
-	mpi.extraLock.RLock()
+	mpi.lock.RLock()
 	extra, ok := mpi.Extra[context.Name()]
-	mpi.extraLock.RUnlock()
+	mpi.lock.RUnlock()
 	if ok {
 		switch extra := extra.(type) {
 		case json.RawMessage:
@@ -76,9 +76,9 @@ func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) er
 			if err != nil {
 				return err
 			}
-			mpi.extraLock.Lock()
+			mpi.lock.Lock()
 			mpi.Extra[context.Name()] = v
-			mpi.extraLock.Unlock()
+			mpi.lock.Unlock()
 		default:
 			x := reflect.ValueOf(extra)
 			if x.Kind() == reflect.Ptr {
@@ -92,8 +92,8 @@ func (mpi *MinecraftPlayerInfo) GetExtra(context pluginabi.PluginName, v any) er
 }
 
 func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any) {
-	mpi.extraLock.Lock()
-	defer mpi.extraLock.Unlock()
+	mpi.lock.Lock()
+	defer mpi.lock.Unlock()
 	mpi.Extra[context.Name()] = extra
 }
 
@@ -276,15 +276,15 @@ func (pi *PlayerInfo) GetPlayerInfo(player string) (playerInfo *MinecraftPlayerI
 		pi.data.playerInfoLock.Unlock()
 		defer pi.Commit(playerInfo)
 	} else {
-		playerInfo.playerInfo = pi
+		playerInfo.lock.Lock()
+		defer playerInfo.lock.Unlock()
 		if playerInfo.Extra == nil {
 			playerInfo.Extra = make(map[string]any)
 		}
+		playerInfo.playerInfo = pi
 	}
 	if playerInfo.UUID == "" {
-		if uuid != "" {
-			playerInfo.UUID = uuid
-		} else {
+		if uuid == "" {
 			playerInfo.UUID, err = pi.getPlayerUUID(player)
 			if err != nil {
 				return nil, err
@@ -355,11 +355,11 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 	}
 	pi.data.RLock()
 	for _, val := range pi.data.PlayerInfo {
-		val.extraLock.RLock()
+		val.lock.RLock()
 	}
 	saveData, err := json.MarshalIndent(pi.data, "", "\t")
 	for _, val := range pi.data.PlayerInfo {
-		val.extraLock.RUnlock()
+		val.lock.RUnlock()
 	}
 	pi.data.RUnlock()
 	if err != nil {

@@ -61,19 +61,18 @@ func (sc *ScoreboardCore) Init(pm pluginabi.PluginManager) error {
 }
 
 func (sc *ScoreboardCore) cleanExpiredTrigger() {
-	sc.tlock.RLock()
-	defer sc.tlock.RUnlock()
+	sc.tlock.Lock()
 	cleanupTransaction := []string{}
 	now := time.Now()
 	for key, value := range sc.trigger {
 		if now.Sub(value.createTime).Hours() > 1 || value.Time == 0 {
 			delete(sc.trigger, key)
 			cleanupTransaction = append(cleanupTransaction,
-				fmt.Sprintf("scoreboard objectives add %s trigger", key),
-				fmt.Sprintf("scoreboard players enable %s %s", value.Selector, key),
+				fmt.Sprintf("scoreboard objectives remove %s", key),
 			)
 		}
 	}
+	sc.tlock.Unlock()
 	sc.RunCommand(strings.Join(cleanupTransaction, "\n"))
 }
 
@@ -82,7 +81,6 @@ func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
 	if len(triggerInfo) < 5 {
 		return
 	}
-	sc.Println(triggerInfo, len(triggerInfo))
 	value := 0
 	player := strings.TrimSpace(triggerInfo[1])
 	trigger := strings.TrimSpace(triggerInfo[2])
@@ -269,7 +267,7 @@ func (sc *ScoreboardCore) clearTrigger() {
 		})
 		for _, trigger := range triggerStrList {
 			if strings.Contains(trigger, "tri_") {
-				commandList = append(commandList, "scoreboard objectives remove "+trigger)
+				commandList = append(commandList, fmt.Sprintf(`scoreboard objectives remove %s`, trigger))
 			}
 		}
 		sc.RunCommand(strings.Join(commandList, "\n"))

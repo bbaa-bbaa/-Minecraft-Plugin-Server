@@ -27,7 +27,6 @@ import (
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
-	"github.com/fatih/color"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/samber/lo"
 )
@@ -234,7 +233,7 @@ func (bp *BackupPlugin) MakeBackup(comment string) {
 	bp.CleanupBackup()
 }
 
-func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func(string) tellraw.GoFunc) {
+func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func(string) tellraw.GoFunc, pager func(string, string)) {
 	if start >= len(list) {
 		bp.Tellraw("@a", []tellraw.Message{{Text: "该页没有内容", Color: tellraw.Red}})
 	}
@@ -271,7 +270,7 @@ func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func
 				ClickEvent: &tellraw.ClickEvent{
 					Action: tellraw.RunCommand,
 					GoFunc: func(s string, i int) {
-						bp.rollbackList(list[max(0, start-BackupPlugin_PageSize)])
+						pager(s, list[max(0, start-BackupPlugin_PageSize)])
 					},
 				},
 			},
@@ -291,7 +290,7 @@ func (bp *BackupPlugin) showList(list []string, start int, end int, execCmd func
 				ClickEvent: &tellraw.ClickEvent{
 					Action: tellraw.RunCommand,
 					GoFunc: func(s string, i int) {
-						bp.rollbackList(list[min(len(list)-1, end)])
+						pager(s, list[min(len(list)-1, end)])
 					},
 				},
 			},
@@ -362,10 +361,10 @@ func (bp *BackupPlugin) rollbackPlayerdataList(player string, start string) {
 			}
 			bp.rollbackPlayerdataSelected(player, selected)
 		}
-	})
+	}, bp.rollbackPlayerdataList)
 }
 
-func (bp *BackupPlugin) rollbackList(start string) {
+func (bp *BackupPlugin) rollbackList(_ string, start string) {
 	backupFiles, err := os.ReadDir(filepath.Join(bp.Dest, "world"))
 	if err != nil {
 		bp.TellrawError("@a", err)
@@ -388,25 +387,7 @@ func (bp *BackupPlugin) rollbackList(start string) {
 		return func(player string, i int) {
 			bp.rollbackSelected(player, selected)
 		}
-	})
-}
-
-func (bp *BackupPlugin) Rollback(backup string) {
-	bp.Println(color.YellowString("正在回档: "), color.BlueString(backup))
-	bp.Println(color.RedString("等待游戏服务器关闭"))
-	bp.pm.Stop()
-	bp.Println(color.GreenString("游戏服务器已关闭"))
-	bp.Println(color.YellowString("创建回档前备份"))
-	bp.MakeBackup("PreRollback")
-	bp.Println(color.GreenString("备份结束"))
-	bp.backupLock.Lock()
-	os.RemoveAll(bp.Source)
-	bp.Println(color.YellowString("正在复制存档"))
-	bp.Copy(backup, bp.Source)
-	bp.Println(color.GreenString("回档结束"))
-	bp.backupLock.Unlock()
-	bp.Println(color.GreenString("请求启动游戏服务器"))
-	bp.pm.StartMinecraft()
+	}, bp.rollbackList)
 }
 
 func (bp *BackupPlugin) Confirm(player string) {
@@ -448,7 +429,7 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 		bp.MakeBackup(strings.Join(args[1:], " "))
 	case "rollback":
 		if len(args) < 2 {
-			bp.rollbackList("")
+			bp.rollbackList(player, "")
 			return
 		} else {
 			bp.rollbackSelected(player, strings.Join(args[1:], " "))
