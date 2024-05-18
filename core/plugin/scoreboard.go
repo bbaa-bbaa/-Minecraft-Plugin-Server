@@ -40,6 +40,8 @@ type MinecraftTrigger struct {
 	createTime time.Time
 }
 
+const MaxTriggerCount = 1024
+
 type ScoreboardCore struct {
 	BasePlugin
 	score       map[string]map[string]int64
@@ -72,8 +74,23 @@ func (sc *ScoreboardCore) cleanExpiredTrigger() {
 			)
 		}
 	}
+	if len(sc.trigger) > MaxTriggerCount {
+		triggerList := maps.Keys(sc.trigger)
+		slices.SortFunc(triggerList, func(a string, b string) int {
+			return sc.trigger[b].createTime.Compare(sc.trigger[a].createTime)
+		})
+		overflowTriggerList := triggerList[min(len(triggerList), MaxTriggerCount):]
+		for _, key := range overflowTriggerList {
+			delete(sc.trigger, key)
+			cleanupTransaction = append(cleanupTransaction,
+				fmt.Sprintf("scoreboard objectives remove %s", key),
+			)
+		}
+	}
 	sc.tlock.Unlock()
-	sc.RunCommand(strings.Join(cleanupTransaction, "\n"))
+	if len(cleanupTransaction) > 0 {
+		sc.RunCommand(strings.Join(cleanupTransaction, "\n"))
+	}
 }
 
 func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
@@ -219,6 +236,7 @@ func (sc *ScoreboardCore) syncOneScore(context pluginabi.PluginName, player stri
 }
 
 func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, trigger ...MinecraftTrigger) (name []string) {
+	sc.cleanExpiredTrigger()
 	triggername := ""
 	commandTransaction := []string{}
 	namespace := sc.getNamespace(context)
