@@ -20,20 +20,24 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
+	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
 )
 
-var DeathEventLog = regexp.MustCompile(`\[.*\]: (\w+) [\w ]+$`)
+var MinecraftMessage = regexp.MustCompile(`\[.*?MinecraftServer.?\]: (.*)`)
 
-var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile("has made the advancement")}
+var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile("has made the advancement"), regexp.MustCompile(" has the following entity data"), regexp.MustCompile("trigger"), regexp.MustCompile("online"), core.PlayerJoinLeaveMessage}
 
 type BackPlugin struct {
 	plugin.BasePlugin
+	playerThrottle sync.Map
 }
 
 func (bp *BackPlugin) DisplayName() string {
@@ -76,41 +80,81 @@ func (bp *BackPlugin) back(player string, _ ...string) {
 	bp.Teleport(player, pi.LastLocation)
 }
 
-func (bp *BackPlugin) deathEvent(logmsg string, iscmdrsp bool) {
-	if iscmdrsp {
+func (bp *BackPlugin) checkDeath(player string) {
+	playerDeathData := bp.RunCommand(fmt.Sprintf("data get entity %s DeathTime", player))
+	playerDeathTime := strings.Split(playerDeathData, ":")
+	if len(playerDeathTime) != 2 {
 		return
 	}
-	if DeathEventLog.MatchString(logmsg) {
+	deathTime, err := strconv.ParseInt(strings.Trim(playerDeathTime[1], " s"), 10, 64)
+	if err != nil {
+		return
+	}
+	if deathTime > 0 {
+		bp.Println(color.GreenString(player), color.YellowString(" 不幸离世，保存死亡地点"))
+		pi, err := bp.GetPlayerInfo(player)
+		if err != nil {
+			return
+		}
+		position, err := pi.GetDeathPosition()
+		if err != nil {
+			position, err = pi.GetPosition()
+			if err != nil {
+				bp.Tellraw(player, []tellraw.Message{
+					{Text: "死亡地点记录失败", Color: tellraw.Green},
+					{Text: " 请联系服务器管理tp", Color: tellraw.Red},
+				})
+				return
+			}
+		}
+		if pi.LastLocation != nil && (pi.LastLocation.Dimension != position.Dimension || !slices.Equal(pi.LastLocation.Position[:], position.Position[:])) {
+			pi.LastLocation = position
+			pi.Commit()
+			bp.Tellraw(player, []tellraw.Message{
+				{Text: "已保存上次死亡地点", Color: tellraw.Green},
+				{Text: " 输入 !!back 传送", Color: tellraw.Yellow},
+			})
+			time.Sleep(5 * time.Second)
+			bp.RunCommand("effect give @a minecraft:glowing infinite 1 true")
+		}
+	}
+}
+
+func (bp *BackPlugin) deathEvent(logmsg string, iscmdrsp bool) {
+	if contentMatcher := MinecraftMessage.FindStringSubmatch(logmsg); len(contentMatcher) == 2 {
 		for _, black := range DeathEventBlackList {
 			if black.MatchString(logmsg) {
 				return
 			}
 		}
-		logmsg := DeathEventLog.FindStringSubmatch(logmsg)
-		player := logmsg[1]
 		playerList := bp.GetPlayerList()
-		if slices.Contains(playerList, player) {
-			time.Sleep(50 * time.Millisecond)
-			playerDeathData := bp.RunCommand(fmt.Sprintf("data get entity %s DeathTime", player))
-			playerDeathTime := strings.Split(playerDeathData, ":")
-			if len(playerDeathTime) != 2 {
-				return
-			}
-			deathTime, err := strconv.ParseInt(strings.Trim(playerDeathTime[1], " s"), 10, 64)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			if deathTime > 0 {
-				bp.Println(color.GreenString(player), color.YellowString(" 不幸离世，保存死亡地点"))
-				pi, err := bp.GetPlayerInfo_Position(player)
-				if err != nil {
-					fmt.Println(err)
-					return
+		playerSelect := strings.Join(playerList, "|")
+		playerRegex, _ := regexp.Compile(fmt.Sprintf(`\b(%s)\b`, playerSelect))
+		playerMatcher := playerRegex.FindAllStringSubmatch(contentMatcher[1], -1)
+		time.Sleep(50 * time.Millisecond)
+		for _, matchPlayer := range playerMatcher {
+			player := matchPlayer[1]
+			matchIndex := strings.Index(logmsg, player)
+			if matchIndex >= 0 {
+				if !unicode.IsSpace([]rune(logmsg)[max(0, matchIndex-1)]) && !unicode.IsSpace([]rune(logmsg)[min(len(logmsg)-1, matchIndex+len(player))]) {
+					continue
 				}
-				pi.LastLocation = pi.Location
-				pi.Commit()
 			}
+			throttler, ok := bp.playerThrottle.Load(player)
+			if ok {
+				throttler := throttler.(*time.Timer)
+				if !throttler.Stop() {
+					bp.checkDeath(player)
+				}
+			} else {
+				bp.checkDeath(player)
+			}
+			throttler = time.AfterFunc(500*time.Millisecond, (func(player string) func() {
+				return func() {
+					bp.checkDeath(player)
+				}
+			})(player))
+			bp.playerThrottle.Store(player, throttler)
 		}
 	}
 }

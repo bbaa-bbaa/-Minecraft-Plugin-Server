@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/fatih/color"
@@ -109,6 +110,18 @@ func (mpi *MinecraftPlayerInfo) PutExtra(context pluginabi.PluginName, extra any
 	mpi.lock.Lock()
 	defer mpi.lock.Unlock()
 	mpi.Extra[context.Name()] = extra
+}
+
+func (mpi *MinecraftPlayerInfo) GetDeathPosition() (*MinecraftPosition, error) {
+	return mpi.playerInfo.getPlayerDeathPosition(mpi.Player)
+}
+
+func (mpi *MinecraftPlayerInfo) GetPosition() (position *MinecraftPosition, err error) {
+	position, err = mpi.playerInfo.getPlayerPosition(mpi.Player)
+	if err == nil {
+		mpi.Location = position
+	}
+	return
 }
 
 type PlayerInfo_Storage struct {
@@ -231,6 +244,44 @@ func (pi *PlayerInfo) getPlayerUUID(player string) (uuid string, err error) {
 	return uuid, err
 }
 
+func (pi *PlayerInfo) getPlayerDeathPosition(player string) (position *MinecraftPosition, err error) {
+	var tempFloat float64
+	entityDeathInfo := pi.RunCommand("data get entity " + player + " LastDeathLocation")
+	entityPos := strings.SplitN(entityDeathInfo, ";", 2)
+	if len(entityPos) != 2 {
+		return nil, fmt.Errorf("获取 NBT 失败")
+	}
+	entityPosStr := strings.SplitN(entityPos[1], "]", 2)
+	if len(entityPosStr) != 2 {
+		return nil, fmt.Errorf("获取 NBT 失败")
+	}
+	entityPosList := lo.Map(strings.Split(strings.Trim(entityPosStr[0], "[] "), ","), func(item string, index int) float64 {
+		if err != nil {
+			return 0
+		}
+		tempFloat, err = strconv.ParseFloat(strings.Trim(item, " d"), 64)
+		return tempFloat
+	})
+	if err != nil {
+		return nil, err
+	}
+	position = &MinecraftPosition{Position: [3]float64(entityPosList)}
+	entityDim := strings.SplitN(entityDeathInfo, "dimension", 2)
+	if len(entityDim) != 2 {
+		return nil, fmt.Errorf("获取 NBT 失败")
+	}
+	entityDimStr := strings.SplitN(entityDeathInfo, ":", 2)
+	if len(entityDimStr) != 2 {
+		return nil, fmt.Errorf("获取 NBT 失败")
+	}
+	entityDimStrExtract := strings.SplitN(entityDimStr[1], `"`, 3)
+	if len(entityDimStrExtract) != 3 {
+		return nil, fmt.Errorf("获取 NBT 失败")
+	}
+	position.Dimension = entityDimStrExtract[1]
+	return position, err
+}
+
 func (pi *PlayerInfo) getPlayerPosition(player string) (position *MinecraftPosition, err error) {
 	var tempFloat float64
 	entityPosRes := pi.RunCommand("data get entity " + player + " Pos")
@@ -255,6 +306,9 @@ func (pi *PlayerInfo) getPlayerPosition(player string) (position *MinecraftPosit
 		return nil, fmt.Errorf("获取 NBT 失败")
 	}
 	position.Dimension = strings.Trim(entityDim[1], `" `)
+	if !slices.Contains(pi.playerList, player) {
+		go pi.updatePlayerList()
+	}
 	return position, err
 }
 
@@ -322,7 +376,15 @@ func (pi *PlayerInfo) GetPlayerList() []string {
 
 func (pi *PlayerInfo) updatePlayerList() {
 	playerlistMsg := pi.RunCommand("list")
-	playerlistSplitText := strings.SplitN(playerlistMsg, ":", 2)
+	playerLines := strings.Split(playerlistMsg, "\n")
+	playerLine := "players online:"
+	for _, line := range playerLines {
+		if strings.Contains(line, playerLine) {
+			playerLine = line
+			break
+		}
+	}
+	playerlistSplitText := strings.SplitN(playerLine, ":", 2)
 	if len(playerlistSplitText) == 2 {
 		playerList := strings.Split(strings.TrimSpace(playerlistSplitText[1]), ",")
 		pi.playerListLock.Lock()
@@ -331,6 +393,9 @@ func (pi *PlayerInfo) updatePlayerList() {
 			return player, player != ""
 		})
 		pi.playerListLock.Unlock()
+	} else {
+		time.Sleep(3 * time.Second)
+		pi.updatePlayerList()
 	}
 }
 

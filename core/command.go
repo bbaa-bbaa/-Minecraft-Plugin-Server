@@ -64,7 +64,7 @@ func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string, _ b
 	mc.receiverLock.RUnlock()
 	if receiver != nil {
 		if DedicatedServerMessage.MatchString(logText) && !PlayerMessage.MatchString(logText) &&
-			!GameLeftMessage.MatchString(logText) && !LoginMessage.MatchString(logText) && !PlayerCommandMessage.MatchString(logText) {
+			!PlayerJoinLeaveMessage.MatchString(logText) && !LoginMessage.MatchString(logText) && !PlayerCommandMessage.MatchString(logText) {
 			receiver <- logText
 		}
 	}

@@ -383,7 +383,9 @@ func (s *StatusPlugin) monitorWorker() {
 		select {
 		case <-monitorTicker.C:
 			if len(s.GetPlayerList()) > 0 {
-				s.monitorGame()
+				if s.ForgeTpsCommand != "" {
+					s.monitorGame()
+				}
 			}
 		case <-systemTicker.C:
 			if len(s.GetPlayerList()) > 0 {

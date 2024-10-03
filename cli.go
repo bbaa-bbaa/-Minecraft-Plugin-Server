@@ -22,7 +22,7 @@ import (
 	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
-var StartScript = flag.String("script", "/home/bbaa/Minecraft/TestNeoforgeServer/run.sh", "start")
+var StartScript = flag.String("script", "/home/bbaa/Minecraft/BMC4/run.sh", "start")
 
 func main() {
 	flag.Parse()
@@ -48,7 +48,7 @@ func createGameManager() error {
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
-	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/TestNeoforgeServer/world", Dest: "/home/bbaa/Minecraft/Backup/"})
-	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{})
+	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/BMC4/world", Dest: "/home/bbaa/Minecraft/Backup/"})
+	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{MaxSentBandwidth: 50, MaxRecvBandwidth: 800})
 	return nil
 }

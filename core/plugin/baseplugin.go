@@ -144,6 +144,7 @@ func (bp *BasePlugin) GetPlayerInfo_Position(player string) (*MinecraftPlayerInf
 	}
 	return bp.playerInfo.GetPlayerInfo_Position(player)
 }
+
 func (bp *BasePlugin) GetPlayerInfo(player string) (*MinecraftPlayerInfo, error) {
 	if bp.playerInfo == nil {
 		return nil, fmt.Errorf("no playerInfo instance")

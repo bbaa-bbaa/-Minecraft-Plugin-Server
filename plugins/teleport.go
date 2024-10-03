@@ -15,6 +15,7 @@
 package plugins
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -57,6 +58,9 @@ func (tp *TeleportPlugin) teleport(player string, arg ...string) {
 	playerList := tp.GetPlayerList()
 	playerList = lo.Filter(playerList, func(item string, index int) bool {
 		return len(item) >= len(targetName) && strings.EqualFold(targetName, item[:len(targetName)])
+	})
+	slices.SortFunc(playerList, func(a string, b string) int {
+		return len(a) - len(b)
 	})
 	if len(playerList) != 1 {
 		if len(playerList) == 0 {

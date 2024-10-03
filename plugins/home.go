@@ -16,6 +16,7 @@ package plugins
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,7 +66,6 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	}
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
-		fmt.Println(pi)
 		hp.TellrawError("@a", err)
 		return
 	}
@@ -78,6 +78,9 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	homeNameList := maps.Keys(homeList)
 	homeNameList = lo.Filter(homeNameList, func(item string, index int) bool {
 		return len(item) >= len(home) && strings.EqualFold(home, item[:len(home)])
+	})
+	slices.SortFunc(homeNameList, func(a string, b string) int {
+		return len(a) - len(b)
 	})
 	if len(homeNameList) == 0 {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置家 ", Color: tellraw.Red}, {Text: home, Color: tellraw.Yellow}})
@@ -124,7 +127,6 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 	}
 	pi, err := hp.GetPlayerInfo_Position(player)
 	if err != nil {
-		fmt.Println(err)
 		hp.TellrawError("@a", err)
 		return
 	}
@@ -167,7 +169,6 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 	}
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
-		fmt.Println(err)
 		hp.TellrawError("@a", err)
 		return
 	}
@@ -222,7 +223,6 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 	}
 	pi, err := hp.GetPlayerInfo(player)
 	if err != nil {
-		fmt.Println(err)
 		hp.TellrawError("@a", err)
 		return
 	}
