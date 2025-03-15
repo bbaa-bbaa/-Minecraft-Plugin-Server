@@ -18,8 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
 )
 

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"sync"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/fatih/color"
 )
 

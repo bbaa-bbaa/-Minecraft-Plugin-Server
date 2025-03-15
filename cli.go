@@ -18,11 +18,11 @@ import (
 	"flag"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
-var StartScript = flag.String("script", "/home/bbaa/Minecraft/BMC4/run.sh", "start")
+var StartScript = flag.String("script", "/home/bbaa/Minecraft/FabricBase/run.sh", "start")
 
 func main() {
 	flag.Parse()
@@ -48,7 +48,7 @@ func createGameManager() error {
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
-	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/BMC4/world", Dest: "/home/bbaa/Minecraft/Backup/"})
+	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/FabricBase/world", Dest: "/home/bbaa/Minecraft/Backup/"})
 	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{MaxSentBandwidth: 50, MaxRecvBandwidth: 800})
 	return nil
 }

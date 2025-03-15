@@ -24,10 +24,10 @@ import (
 	"strings"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"golang.org/x/exp/maps"
 
 	"github.com/fatih/color"
@@ -365,7 +365,7 @@ func (s *StatusPlugin) status(player string, args ...string) {
 }
 
 func (s *StatusPlugin) testTPSCommand() {
-	tpsCommands := []string{"neoforge tps", "forge tps"}
+	tpsCommands := []string{"neoforge tps", "forge tps", "fabric tps"}
 	for _, testcmd := range tpsCommands {
 		res := s.RunCommand(testcmd)
 		if !core.UnknownCommand.MatchString(res) {

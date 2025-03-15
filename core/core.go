@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/fatih/color"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

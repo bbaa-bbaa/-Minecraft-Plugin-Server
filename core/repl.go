@@ -19,7 +19,7 @@ import (
 	"io"
 	"os"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"golang.org/x/term"
 )
 

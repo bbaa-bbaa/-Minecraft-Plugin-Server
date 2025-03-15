@@ -24,16 +24,16 @@ import (
 	"time"
 	"unicode"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
 )
 
 var MinecraftMessage = regexp.MustCompile(`\[.*?MinecraftServer.?\]: (.*)`)
 
-var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile("has made the advancement"), regexp.MustCompile(" has the following entity data"), regexp.MustCompile("trigger"), regexp.MustCompile("online"), core.PlayerJoinLeaveMessage}
+var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile(" has "), regexp.MustCompile(" has the following entity data"), regexp.MustCompile("trigger"), regexp.MustCompile("online"), core.PlayerJoinLeaveMessage}
 
 type BackPlugin struct {
 	plugin.BasePlugin

@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
 	"github.com/fatih/color"
 	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
@@ -437,6 +437,10 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 	}()
 	if ms.minecraftInstance.state == manager.MinecraftState_running {
 		ms.minecraftInstance.pty.Write([]byte("stop\n"))
+		time.AfterFunc(10*time.Second, func() {
+			ms.minecraftInstance.process.Process.Signal(os.Interrupt)
+			Println(color.RedString("服务器关闭超时，发送 SIGINT 信号"))
+		})
 		ms.minecraftInstance.process.Process.Wait()
 		ms.minecraftInstance.pty.Close()
 	}
@@ -466,6 +470,7 @@ func main() {
 	}()
 	sysSignals := make(chan os.Signal, 1)
 	signal.Notify(sysSignals, syscall.SIGINT, syscall.SIGTERM)
+	Println(color.YellowString("GameManager已启动, 等待客户端链接"))
 	for {
 		<-sysSignals
 		Println(color.RedString("接受到 SIGTERM/SIGINT 信号，正在关闭服务器"))
@@ -475,7 +480,7 @@ func main() {
 				Id: 0,
 			})
 		}
-
+		Println(color.RedString("GameManager已关闭"))
 		os.Exit(0)
 	}
 }

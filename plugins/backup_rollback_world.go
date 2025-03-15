@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
 )
 

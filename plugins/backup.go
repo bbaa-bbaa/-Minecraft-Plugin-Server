@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/samber/lo"
 )

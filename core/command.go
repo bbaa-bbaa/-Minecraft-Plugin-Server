@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
-	"cgit.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"github.com/fatih/color"
 )
 
