@@ -438,8 +438,8 @@ func (ms *ManagerServer) Stop(ctx context.Context, client *manager.Client) (c *e
 	if ms.minecraftInstance.state == manager.MinecraftState_running {
 		ms.minecraftInstance.pty.Write([]byte("stop\n"))
 		time.AfterFunc(10*time.Second, func() {
-			ms.minecraftInstance.process.Process.Signal(os.Interrupt)
-			Println(color.RedString("服务器关闭超时，发送 SIGINT 信号"))
+			err := ms.minecraftInstance.process.Process.Signal(syscall.SIGTERM)
+			Println(color.RedString("服务器关闭超时，发送 SIGTERM 信号 err:"), color.GreenString("%v", err))
 		})
 		ms.minecraftInstance.process.Process.Wait()
 		ms.minecraftInstance.pty.Close()

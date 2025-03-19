@@ -63,7 +63,7 @@ func (mc *MinecraftCommandProcessor) commandResponeProcessor(logText string, _ b
 	receiver := mc.responeReceivers
 	mc.receiverLock.RUnlock()
 	if receiver != nil {
-		if DedicatedServerMessage.MatchString(logText) && !PlayerMessage.MatchString(logText) &&
+		if (DedicatedServerMessage.MatchString(logText) || !strings.HasPrefix(logText, "[")) && !PlayerMessage.MatchString(logText) &&
 			!PlayerJoinLeaveMessage.MatchString(logText) && !LoginMessage.MatchString(logText) && !PlayerCommandMessage.MatchString(logText) {
 			receiver <- logText
 		}
@@ -119,12 +119,12 @@ func (mc *MinecraftCommandProcessor) Worker() {
 				if !ok {
 					continue
 				}
-				queue := len(responseReceiver)
+				// queue := len(responseReceiver)
 				if !isWaitRegex {
 					if !endCommandTimer.Stop() {
 						<-endCommandTimer.C
 					}
-					endCommandTimer.Reset(10*time.Millisecond + time.Duration(10*queue)*time.Millisecond)
+					endCommandTimer.Reset(10 * time.Millisecond)
 				}
 				match := DedicatedServerMessage.FindStringSubmatch(line)
 				if len(match) == 2 {
@@ -133,9 +133,14 @@ func (mc *MinecraftCommandProcessor) Worker() {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
 					} else if waitRegex.MatchString(match[1]) {
 						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(match[1]))
-						endCommandTimer = time.NewTimer(10*time.Millisecond + time.Duration(10*queue)*time.Millisecond)
+						endCommandTimer = time.NewTimer(10 * time.Millisecond)
 						endCommandChannel = endCommandTimer.C
 						isWaitRegex = false
+					}
+				} else {
+					if len(commandBuffer) > 0 {
+						commandBuffer = append(commandBuffer, line)
+						mc.Println(color.YellowString("将命令["), color.GreenString("%d", mc.index), color.YellowString("]: "), color.RedString(cmd.command), color.YellowString(" 的输出储存为: "), color.CyanString(line))
 					}
 				}
 			case <-endCommandChannel:
