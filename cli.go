@@ -22,7 +22,7 @@ import (
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/plugins"
 )
 
-var StartScript = flag.String("script", "/home/bbaa/Minecraft/FabricBase/run.sh", "start")
+var StartScript = flag.String("script", "/home/bbaa/Minecraft/BountyHunter/run.sh", "start")
 
 func main() {
 	flag.Parse()
@@ -48,7 +48,7 @@ func createGameManager() error {
 	minecraftManagerClient.RegisterPlugin(&plugins.TeleportPlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.HomePlugin{})
 	minecraftManagerClient.RegisterPlugin(&plugins.BackPlugin{})
-	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/FabricBase/world", Dest: "/home/bbaa/Minecraft/Backup/"})
+	minecraftManagerClient.RegisterPlugin(&plugins.BackupPlugin{Source: "/home/bbaa/Minecraft/BountyHunter/world", Dest: "/home/bbaa/Minecraft/Backup/"})
 	minecraftManagerClient.RegisterPlugin(&plugins.StatusPlugin{MaxSentBandwidth: 50, MaxRecvBandwidth: 800})
 	return nil
 }

@@ -58,7 +58,7 @@ func (sc *ScoreboardCore) Init(pm pluginabi.PluginManager) error {
 	sc.score = make(map[string]map[string]int64)
 	sc.trigger = make(map[string]MinecraftTrigger)
 	sc.triggerInfo = regexp.MustCompile(`.*?\]:(?: \[[^\]]+\])? ?\[(\w+): ?Triggered ?\[(.*?)\] ?(?:\(set value to (\d+)\)|\(added (\d+) to value\))?\]`)
-	pm.RegisterLogProcesser(sc, sc.processTrigger)
+	sc.RegisterLogProcesser(sc.processTrigger)
 	return nil
 }
 

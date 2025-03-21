@@ -464,7 +464,10 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 }
 
 func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
-	bp.pm = pm
+	err = bp.BasePlugin.Init(pm, bp)
+	if err != nil {
+		return err
+	}
 
 	bp.cron, _ = gocron.NewScheduler()
 	bp.cron.NewJob(gocron.CronJob("*/30 * * * *", false), gocron.NewTask(func() {
@@ -472,10 +475,7 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 			bp.MakeBackup("AutoBackup")
 		}
 	}), gocron.WithSingletonMode(gocron.LimitModeReschedule))
-	err = bp.BasePlugin.Init(pm, bp)
-	if err != nil {
-		return err
-	}
+
 	bp.RegisterCommand("backup", bp.Cli)
 	return nil
 }

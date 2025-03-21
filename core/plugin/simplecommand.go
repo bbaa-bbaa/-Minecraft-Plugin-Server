@@ -36,7 +36,7 @@ func (sp *SimpleCommand) Init(pm pluginabi.PluginManager) (err error) {
 	if err != nil {
 		return err
 	}
-	pm.RegisterLogProcesser(sp, sp.processCommand)
+	sp.RegisterLogProcesser(sp.processCommand)
 	sp.playerCommand = regexp.MustCompile(`.*?\]:(?: \[[^\]]+\])? <(.*?)>.*?!!(.*)`)
 	sp.registerCommands = make(map[string]func(string, ...string))
 	return nil

@@ -166,7 +166,7 @@ func (pi *PlayerInfo) Init(pm pluginabi.PluginManager) (err error) {
 		return err
 	}
 	pi.data = &PlayerInfo_Storage{PlayerInfo: map[string]*MinecraftPlayerInfo{}, UUIDMap: map[string]string{}}
-	pm.RegisterLogProcesser(pi, pi.playerJoinLeaveEvent)
+	pi.RegisterLogProcesser(pi.playerJoinLeaveEvent)
 	err = pi.Load()
 	if err != nil {
 		pi.Println(color.RedString("加载存储的玩家数据失败"))

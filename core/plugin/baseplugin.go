@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/manager"
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
 	"github.com/fatih/color"
@@ -136,6 +137,13 @@ func (bp *BasePlugin) RegisterCommand(command string, commandFunc func(string, .
 		return fmt.Errorf("no simplecommand instance")
 	}
 	return bp.simpleCommand.RegisterCommand(bp.p, command, commandFunc)
+}
+
+func (bp *BasePlugin) RegisterLogProcesser(processer func(logmsg string, iscommandrespone bool)) (channel chan *manager.MessageResponse) {
+	if bp.pm == nil {
+		return nil
+	}
+	return bp.pm.RegisterLogProcesser(bp.p, processer)
 }
 
 func (bp *BasePlugin) GetPlayerInfo_Position(player string) (*MinecraftPlayerInfo, error) {

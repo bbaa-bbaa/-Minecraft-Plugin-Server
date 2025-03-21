@@ -71,13 +71,31 @@ func (s *StatusPlugin) Name() string {
 	return "StatusPlugin"
 }
 
+func (s *StatusPlugin) Ping(logmsg string, iscmdrsp bool) {
+	if iscmdrsp {
+		return
+	}
+	ping := core.PlayerMessage.FindStringSubmatch(logmsg)
+	if len(ping) < 3 {
+		return
+	}
+	number, err := strconv.ParseInt(strings.TrimSpace(ping[2]), 10, 64)
+	if err != nil {
+		return
+	}
+	number += 1
+	s.Tellraw("@a", []tellraw.Message{
+		{Text: fmt.Sprintf("Pong! %d", number), Color: tellraw.Aqua},
+	})
+}
+
 func (s *StatusPlugin) Init(pm pluginabi.PluginManager) (err error) {
-	s.pm = pm
 	err = s.BasePlugin.Init(pm, s)
 	if err != nil {
 		return err
 	}
 	s.RegisterCommand("status", s.status)
+	s.RegisterLogProcesser(s.Ping)
 	s.monitorSystem()
 	return nil
 }

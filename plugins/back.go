@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -33,11 +32,10 @@ import (
 
 var MinecraftMessage = regexp.MustCompile(`\[.*?MinecraftServer.?\]: (.*)`)
 
-var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile(" has "), regexp.MustCompile(" has the following entity data"), regexp.MustCompile("trigger"), regexp.MustCompile("online"), core.PlayerJoinLeaveMessage}
+var DeathEventBlackList = []*regexp.Regexp{regexp.MustCompile(" has the following entity data"), regexp.MustCompile("trigger"), regexp.MustCompile("players online"), core.PlayerJoinLeaveMessage}
 
 type BackPlugin struct {
 	plugin.BasePlugin
-	playerThrottle sync.Map
 }
 
 func (bp *BackPlugin) DisplayName() string {
@@ -94,6 +92,10 @@ func (bp *BackPlugin) checkDeath(player string) {
 		bp.Println(color.GreenString(player), color.YellowString(" 不幸离世，保存死亡地点"))
 		pi, err := bp.GetPlayerInfo(player)
 		if err != nil {
+			bp.Tellraw(player, []tellraw.Message{
+				{Text: "死亡地点记录失败", Color: tellraw.Green},
+				{Text: " 请联系服务器管理tp", Color: tellraw.Red},
+			})
 			return
 		}
 		position, err := pi.GetDeathPosition()
@@ -107,15 +109,14 @@ func (bp *BackPlugin) checkDeath(player string) {
 				return
 			}
 		}
-		if pi.LastLocation != nil && (pi.LastLocation.Dimension != position.Dimension || !slices.Equal(pi.LastLocation.Position[:], position.Position[:])) {
+		if pi.LastLocation == nil || (pi.LastLocation.Dimension != position.Dimension || !slices.Equal(pi.LastLocation.Position[:], position.Position[:])) {
 			pi.LastLocation = position
 			pi.Commit()
 			bp.Tellraw(player, []tellraw.Message{
 				{Text: "已保存上次死亡地点", Color: tellraw.Green},
 				{Text: " 输入 !!back 传送", Color: tellraw.Yellow},
 			})
-			time.Sleep(5 * time.Second)
-			bp.RunCommand("effect give @a minecraft:glowing infinite 1 true")
+			//			bp.RunCommand("effect give @a minecraft:glowing infinite 1 true")
 		}
 	}
 }
@@ -127,11 +128,14 @@ func (bp *BackPlugin) deathEvent(logmsg string, iscmdrsp bool) {
 				return
 			}
 		}
+		if iscmdrsp {
+			return
+		}
 		playerList := bp.GetPlayerList()
 		playerSelect := strings.Join(playerList, "|")
 		playerRegex, _ := regexp.Compile(fmt.Sprintf(`\b(%s)\b`, playerSelect))
 		playerMatcher := playerRegex.FindAllStringSubmatch(contentMatcher[1], -1)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 		for _, matchPlayer := range playerMatcher {
 			player := matchPlayer[1]
 			matchIndex := strings.Index(logmsg, player)
@@ -140,21 +144,7 @@ func (bp *BackPlugin) deathEvent(logmsg string, iscmdrsp bool) {
 					continue
 				}
 			}
-			throttler, ok := bp.playerThrottle.Load(player)
-			if ok {
-				throttler := throttler.(*time.Timer)
-				if !throttler.Stop() {
-					bp.checkDeath(player)
-				}
-			} else {
-				bp.checkDeath(player)
-			}
-			throttler = time.AfterFunc(500*time.Millisecond, (func(player string) func() {
-				return func() {
-					bp.checkDeath(player)
-				}
-			})(player))
-			bp.playerThrottle.Store(player, throttler)
+			bp.checkDeath(player)
 		}
 	}
 }
@@ -172,7 +162,7 @@ func (bp *BackPlugin) Init(pm pluginabi.PluginManager) (err error) {
 		{Text: "数", Color: tellraw.Yellow},
 	})
 	bp.DisplayScoreboard("Death", "sidebar")
-	pm.RegisterLogProcesser(bp, bp.deathEvent)
+	bp.RegisterLogProcesser(bp.deathEvent)
 	bp.RegisterCommand("back", bp.back)
 	return nil
 }
