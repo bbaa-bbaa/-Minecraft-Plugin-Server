@@ -445,6 +445,11 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 		bp.Cancel(player)
 	case "confirm":
 		bp.Confirm(player)
+	case "save":
+		bp.RunCommand("save-all")
+		bp.Tellraw("@a", []tellraw.Message{
+			{Text: "存档已保存", Color: tellraw.Green},
+		})
 	default:
 		bp.Tellraw("@a", []tellraw.Message{
 			{Text: "可用命令如下:\n", Color: tellraw.Light_Purple},
@@ -457,7 +462,10 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 			{Text: "回档整个世界\n", Color: tellraw.Light_Purple},
 			{Text: "!!backup ", Color: tellraw.Red},
 			{Text: "rollbackplayerdata ", Color: tellraw.Yellow},
-			{Text: "回档当前玩家的数据", Color: tellraw.Light_Purple},
+			{Text: "回档当前玩家的数据\n", Color: tellraw.Light_Purple},
+			{Text: "!!backup ", Color: tellraw.Red},
+			{Text: "save ", Color: tellraw.Yellow},
+			{Text: "触发存档保存", Color: tellraw.Light_Purple},
 		})
 	}
 

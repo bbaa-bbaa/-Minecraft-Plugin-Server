@@ -135,6 +135,7 @@ func (rpp *RollbackPlayerdataPending) Execute() {
 	rpp.bp.RunCommand(fmt.Sprintf("kick %s 正在准备回档", rpp.player))
 	rpp.bp.Println(color.YellowString("封禁玩家"))
 	rpp.bp.RunCommand(fmt.Sprintf("ban %s 回档正在进行中", rpp.player))
+	time.Sleep(2 * time.Second)
 	rpp.bp.Println(color.RedString("复制玩家数据："), color.YellowString(rpp.path))
 	rpp.bp.Copy(rpp.path, rpp.bp.Source)
 	rpp.bp.Println(color.YellowString("解除封禁玩家"))

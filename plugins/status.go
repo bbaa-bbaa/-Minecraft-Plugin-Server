@@ -90,6 +90,7 @@ func (s *StatusPlugin) Ping(logmsg string, iscmdrsp bool) {
 }
 
 func (s *StatusPlugin) Init(pm pluginabi.PluginManager) (err error) {
+	s.pm = pm
 	err = s.BasePlugin.Init(pm, s)
 	if err != nil {
 		return err

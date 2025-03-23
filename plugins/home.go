@@ -47,7 +47,7 @@ func (hp *HomePlugin) Init(pm pluginabi.PluginManager) (err error) {
 		return err
 	}
 	hp.RegisterCommand("home", hp.home)
-	hp.RegisterCommand("sethome", hp.sethome)
+	hp.RegisterCommand("sethome", hp.Sethome)
 	hp.RegisterCommand("homelist", hp.homelist)
 	hp.RegisterCommand("delhome", hp.delhome)
 	return nil
@@ -114,7 +114,40 @@ func (hp *HomePlugin) home(player string, args ...string) {
 	hp.Teleport(player, homePosition)
 }
 
-func (hp *HomePlugin) sethome(player string, args ...string) {
+func (hp *HomePlugin) sethome(pi *plugin.MinecraftPlayerInfo, home string, position *plugin.MinecraftPosition) {
+	var homeList HomePlugin_HomeList
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
+		homeList = make(HomePlugin_HomeList)
+		pi.PutExtra(hp, homeList)
+	}
+	homeList[home] = position
+	hp.Tellraw(pi.Player, []tellraw.Message{
+		{Text: "设置家 ", Color: tellraw.Green, Bold: true},
+		{Text: "「" + home + "」", Color: tellraw.Aqua,
+			HoverEvent: &tellraw.HoverEvent{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
+					{Text: "世界: ", Color: tellraw.Green},
+					{Text: pi.Location.Dimension, Color: tellraw.Yellow},
+					{Text: "\n坐标: [", Color: tellraw.Green},
+					{Text: fmt.Sprintf("%f", position.Position[0]), Color: tellraw.Aqua},
+					{Text: ",", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%f", position.Position[1]), Color: tellraw.Aqua},
+					{Text: ",", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%f", position.Position[2]), Color: tellraw.Aqua},
+					{Text: "]", Color: tellraw.Green},
+				},
+			},
+			ClickEvent: &tellraw.ClickEvent{
+				Action: tellraw.SuggestCommand,
+				Value:  "!!home " + home,
+			},
+		},
+	})
+	pi.Commit()
+}
+
+func (hp *HomePlugin) Sethome(player string, args ...string) {
 	if len(args) > 1 {
 		hp.Tellraw(player, []tellraw.Message{{Text: "非法的家名称", Color: tellraw.Red}})
 		return
@@ -130,36 +163,7 @@ func (hp *HomePlugin) sethome(player string, args ...string) {
 		hp.TellrawError("@a", err)
 		return
 	}
-	var homeList HomePlugin_HomeList
-	pi.GetExtra(hp, &homeList)
-	if homeList == nil {
-		homeList = make(HomePlugin_HomeList)
-		pi.PutExtra(hp, homeList)
-	}
-	homeList[home] = pi.Location
-	hp.Tellraw(player, []tellraw.Message{
-		{Text: "设置家 ", Color: tellraw.Green, Bold: true},
-		{Text: "「" + home + "」", Color: tellraw.Aqua,
-			HoverEvent: &tellraw.HoverEvent{
-				Action: tellraw.Show_Text, Contents: []tellraw.Message{
-					{Text: "世界: ", Color: tellraw.Green},
-					{Text: pi.Location.Dimension, Color: tellraw.Yellow},
-					{Text: "\n坐标: [", Color: tellraw.Green},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[0]), Color: tellraw.Aqua},
-					{Text: ",", Color: tellraw.Yellow},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[1]), Color: tellraw.Aqua},
-					{Text: ",", Color: tellraw.Yellow},
-					{Text: fmt.Sprintf("%f", pi.Location.Position[2]), Color: tellraw.Aqua},
-					{Text: "]", Color: tellraw.Green},
-				},
-			},
-			ClickEvent: &tellraw.ClickEvent{
-				Action: tellraw.SuggestCommand,
-				Value:  "!!home " + home,
-			},
-		},
-	})
-	pi.Commit()
+	hp.sethome(pi, home, pi.Location)
 }
 
 func (hp *HomePlugin) homelist(player string, args ...string) {
@@ -183,7 +187,10 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 		return
 	}
 	homeMsg := []tellraw.Message{{Text: "你拥有以下家:", Color: tellraw.Green}, {Text: "[点击可快速传送]\n", Color: tellraw.Light_Purple, Bold: true}}
-	for home, position := range homeList {
+	homeNameList := maps.Keys(homeList)
+	slices.Sort(homeNameList)
+	for _, home := range homeNameList {
+		position := homeList[home]
 		homeMsg = append(homeMsg, tellraw.Message{
 			Text: "「" + home + "」 ", Color: tellraw.Aqua,
 			HoverEvent: &tellraw.HoverEvent{
@@ -210,6 +217,53 @@ func (hp *HomePlugin) homelist(player string, args ...string) {
 	hp.Tellraw(player, homeMsg)
 }
 
+func (hp *HomePlugin) delhome_list(player string) {
+	pi, err := hp.GetPlayerInfo(player)
+	if err != nil {
+		hp.TellrawError("@a", err)
+		return
+	}
+	var homeList HomePlugin_HomeList
+	pi.GetExtra(hp, &homeList)
+	if homeList == nil {
+		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
+		return
+	}
+	if len(homeList) == 0 {
+		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置任何家", Color: tellraw.Red}})
+		return
+	}
+	homeMsg := []tellraw.Message{{Text: "你拥有以下家:", Color: tellraw.Green}, {Text: "[点击可快速删除]\n", Color: tellraw.Red, Bold: true}}
+	homeNameList := maps.Keys(homeList)
+	slices.Sort(homeNameList)
+	for _, home := range homeNameList {
+		position := homeList[home]
+		homeMsg = append(homeMsg, tellraw.Message{
+			Text: "「" + home + "」 ", Color: tellraw.Light_Purple,
+			HoverEvent: &tellraw.HoverEvent{
+				Action: tellraw.Show_Text, Contents: []tellraw.Message{
+					{Text: "世界: ", Color: tellraw.Green},
+					{Text: position.Dimension, Color: tellraw.Yellow},
+					{Text: "\n坐标: [", Color: tellraw.Green},
+					{Text: fmt.Sprintf("%f", position.Position[0]), Color: tellraw.Aqua},
+					{Text: ",", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%f", position.Position[1]), Color: tellraw.Aqua},
+					{Text: ",", Color: tellraw.Yellow},
+					{Text: fmt.Sprintf("%f", position.Position[2]), Color: tellraw.Aqua},
+					{Text: "]", Color: tellraw.Green},
+				},
+			},
+			ClickEvent: &tellraw.ClickEvent{
+				Action: tellraw.RunCommand,
+				GoFunc: func(tplayer string, i int) {
+					hp.delhome(player, home)
+				},
+			},
+		})
+	}
+	hp.Tellraw(player, homeMsg)
+}
+
 func (hp *HomePlugin) delhome(player string, args ...string) {
 	if len(args) > 1 {
 		hp.Tellraw(player, []tellraw.Message{{Text: "非法的家名称", Color: tellraw.Red}})
@@ -217,7 +271,8 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 	}
 	home := ""
 	if len(args) == 0 {
-		home = "default"
+		hp.delhome_list(player)
+		return
 	} else {
 		home = args[0]
 	}
@@ -237,6 +292,8 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 		hp.Tellraw(player, []tellraw.Message{{Text: "你没有设置家", Color: tellraw.Red, Bold: true}, {Text: "「" + home + "」", Color: tellraw.Aqua}})
 		return
 	}
+	delete(homeList, home)
+	pi.Commit()
 	hp.Tellraw(player, []tellraw.Message{
 		{Text: "删除家 ", Color: tellraw.Red, Bold: true},
 		{Text: "「" + home + "」", Color: tellraw.Aqua,
@@ -254,7 +311,18 @@ func (hp *HomePlugin) delhome(player string, args ...string) {
 				},
 			},
 		},
+		{Text: "「撤销」", Color: tellraw.Yellow,
+			ClickEvent: &tellraw.ClickEvent{
+				Action: tellraw.RunCommand,
+				GoFunc: func(_ string, i int) {
+					pi, err := hp.GetPlayerInfo(player)
+					if err != nil {
+						hp.TellrawError("@a", err)
+						return
+					}
+					hp.sethome(pi, home, homeInfo)
+				},
+			},
+		},
 	})
-	delete(homeList, home)
-	pi.Commit()
 }
