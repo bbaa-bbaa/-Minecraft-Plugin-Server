@@ -29,6 +29,10 @@ type REPLPlugin struct {
 	state    *term.State
 }
 
+func (rp *REPLPlugin) Depends() []string {
+	return nil
+}
+
 func (rp *REPLPlugin) DisplayName() string {
 	return "终端命令"
 }

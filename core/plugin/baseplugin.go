@@ -34,6 +34,15 @@ type BasePlugin struct {
 	tellrawManager *TellrawManager
 }
 
+// downstream plugins should implement this interface like
+//
+//	func (p *Plugin) Depends() []string {
+//	 return append(p.BasePlugin.Depends(), []string{"PluginName","AAA"}...)
+//	}
+func (bp *BasePlugin) Depends() []string {
+	return []string{"PlayerInfo", "ScoreboardCore", "TellrawManager", "TeleportCore", "SimpleCommand"}
+}
+
 func (bp *BasePlugin) Println(a ...any) (int, error) {
 	return bp.pm.Println(color.BlueString(bp.p.DisplayName()), a...)
 }

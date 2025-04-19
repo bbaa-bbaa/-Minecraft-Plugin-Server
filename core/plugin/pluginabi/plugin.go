@@ -25,6 +25,7 @@ type Plugin interface {
 	Init(PluginManager) error
 	Start()
 	Pause()
+	Depends() []string // only for plugin init, not for runtime, cyclic dependency is allowed
 }
 
 type PluginName interface {
@@ -52,7 +53,7 @@ type PluginManager interface {
 	Printf(scope string, format string, a ...any) (n int, err error)
 	Println(scope string, a ...any) (n int, err error)
 	RegisterLogProcesser(context PluginName, process func(logmsg string, iscommandrespone bool)) (channel chan *manager.MessageResponse)
-	RegisterManagerMessageChannel(skipRegister bool) (channel chan *manager.MessageResponse)
+	RegisterManagerMessageChannel() (channel chan *manager.MessageResponse)
 	RegisterPlugin(plugin Plugin) (p Plugin, err error)
 	GetPlugin(pluginName string) Plugin
 	UnRegisterManagerMessageChannel(channel chan *manager.MessageResponse)

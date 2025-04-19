@@ -41,16 +41,21 @@ type GameManagerMessageBus struct {
 
 type PluginManager struct {
 	started bool
+	inited  bool
 	plugin  pluginabi.Plugin
 }
 
 func (pm *PluginManager) Init(mpm *MinecraftPluginManager) error {
+	if pm.inited {
+		return nil
+	}
 	mpm.kPrintln(color.YellowString("加载插件 "), color.BlueString(pm.plugin.DisplayName()))
 	err := pm.plugin.Init(mpm)
 	if err != nil {
 		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pm.plugin.DisplayName()), color.RedString(" 加载失败: "), color.MagentaString(err.Error()))
 		return err
 	}
+	pm.inited = true
 	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pm.plugin.DisplayName()), color.GreenString(" 加载成功"))
 	if mpm.minecraftState == manager.MinecraftState_running {
 		pm.Start()
@@ -88,7 +93,6 @@ type MinecraftPluginManager struct {
 	errBus           chan error
 	commandProcessor *MinecraftCommandProcessor
 	plugins          map[string]*PluginManager
-	delayinitPlugins []*PluginManager
 	pluginLock       sync.RWMutex
 	minecraftState   manager.MinecraftState
 }
@@ -190,10 +194,6 @@ func GetFunctionName(i interface{}) string {
 }
 
 func (mpm *MinecraftPluginManager) RegisterLogProcesser(context pluginabi.PluginName, process func(string, bool)) (channel chan *manager.MessageResponse) {
-	return mpm.registerLogProcesser(context, process, false)
-}
-
-func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.PluginName, process func(string, bool), skipRegister bool) (channel chan *manager.MessageResponse) {
 	var pluginName string
 	if context == nil {
 		pluginName = "anonymous"
@@ -201,7 +201,7 @@ func (mpm *MinecraftPluginManager) registerLogProcesser(context pluginabi.Plugin
 		pluginName = context.DisplayName()
 	}
 	mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginName), color.YellowString(" 注册了一个日志处理器: "), color.GreenString(GetFunctionName(process)))
-	channel = mpm.RegisterManagerMessageChannel(skipRegister)
+	channel = mpm.RegisterManagerMessageChannel()
 	go func() {
 		for msg := range channel {
 			switch msg.Type {
@@ -223,13 +223,11 @@ func (mpm *MinecraftPluginManager) registerServerMessageListener(waitForReady bo
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) RegisterManagerMessageChannel(skipRegister bool) (channel chan *manager.MessageResponse) {
+func (mpm *MinecraftPluginManager) RegisterManagerMessageChannel() (channel chan *manager.MessageResponse) {
 	mpm.messageBus.lock.Lock()
 	defer mpm.messageBus.lock.Unlock()
 	channel = make(chan *manager.MessageResponse, 16384)
-	if !skipRegister {
-		mpm.messageBus.channels = append(mpm.messageBus.channels, channel)
-	}
+	mpm.messageBus.channels = append(mpm.messageBus.channels, channel)
 	return channel
 }
 
@@ -260,7 +258,34 @@ func (mpm *MinecraftPluginManager) startMinecraft() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) loadPlugin(plugin pluginabi.Plugin, init bool) (p pluginabi.Plugin, err error) {
+func (mpm *MinecraftPluginManager) checkDepends(plugin pluginabi.Plugin) bool {
+	if plugin.Depends() == nil {
+		return true
+	}
+	mpm.pluginLock.RLock()
+	defer mpm.pluginLock.RUnlock()
+	for _, depend := range plugin.Depends() {
+		if _, ok := mpm.plugins[depend]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (mpm *MinecraftPluginManager) initDependsSatisfiedPlugins() {
+	mpm.pluginLock.RLock()
+	defer mpm.pluginLock.RUnlock()
+	for _, pm := range mpm.plugins {
+		if pm.inited {
+			continue
+		}
+		if mpm.checkDepends(pm.plugin) {
+			pm.Init(mpm)
+		}
+	}
+}
+
+func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (p pluginabi.Plugin, err error) {
 	pluginName := plugin.Name()
 	pluginDisplayName := plugin.DisplayName()
 	mpm.pluginLock.Lock()
@@ -269,28 +294,18 @@ func (mpm *MinecraftPluginManager) loadPlugin(plugin pluginabi.Plugin, init bool
 		mpm.plugins[pluginName] = pm
 		mpm.pluginLock.Unlock()
 		mpm.kPrintln(color.YellowString("注册新插件 "), color.BlueString(pluginDisplayName))
-		if init {
+		if mpm.checkDepends(plugin) {
 			err = pm.Init(mpm)
-			if err != nil {
-				return plugin, err
-			}
-		} else {
-			mpm.delayinitPlugins = append(mpm.delayinitPlugins, pm)
 		}
+		if err != nil {
+			return plugin, err
+		}
+		mpm.initDependsSatisfiedPlugins() // delay init
 	} else {
 		mpm.pluginLock.Unlock()
 		mpm.kPrintln(color.YellowString("插件 "), color.BlueString(pluginDisplayName), color.RedString(" 已经注册"))
 	}
-
 	return plugin, nil
-}
-
-func (mpm *MinecraftPluginManager) registerPlugin(plugin pluginabi.Plugin) (p pluginabi.Plugin, err error) {
-	return mpm.loadPlugin(plugin, false)
-}
-
-func (mpm *MinecraftPluginManager) RegisterPlugin(plugin pluginabi.Plugin) (p pluginabi.Plugin, err error) {
-	return mpm.loadPlugin(plugin, true)
 }
 
 func (mpm *MinecraftPluginManager) GetPlugin(pluginName string) pluginabi.Plugin {
@@ -355,20 +370,6 @@ func (mpm *MinecraftPluginManager) StartMinecraft() (err error) {
 	return nil
 }
 
-func (mpm *MinecraftPluginManager) initDelayedPlugin() {
-	mpm.pluginLock.Lock()
-	plugins := slices.Clone(mpm.delayinitPlugins)
-	mpm.delayinitPlugins = nil
-	mpm.pluginLock.Unlock()
-	for _, pm := range plugins {
-		pm.Init(mpm)
-	}
-
-	mpm.pluginLock.Lock()
-	mpm.delayinitPlugins = nil
-	mpm.pluginLock.Unlock()
-}
-
 func (mpm *MinecraftPluginManager) initPlugin() (err error) {
 	mpm.kPrintln(color.YellowString("正在注册命令处理器"))
 	mpm.commandProcessor = &MinecraftCommandProcessor{}
@@ -378,12 +379,11 @@ func (mpm *MinecraftPluginManager) initPlugin() (err error) {
 	mpm.Repl = &REPLPlugin{}
 	mpm.RegisterPlugin(mpm.Repl)
 
-	mpm.registerPlugin(&plugin.ScoreboardCore{})
-	mpm.registerPlugin(&plugin.TellrawManager{})
-	mpm.registerPlugin(&plugin.PlayerInfo{})
-	mpm.registerPlugin(&plugin.TeleportCore{})
-	mpm.registerPlugin(&plugin.SimpleCommand{})
-	mpm.initDelayedPlugin()
+	mpm.RegisterPlugin(&plugin.ScoreboardCore{})
+	mpm.RegisterPlugin(&plugin.TellrawManager{})
+	mpm.RegisterPlugin(&plugin.PlayerInfo{})
+	mpm.RegisterPlugin(&plugin.TeleportCore{})
+	mpm.RegisterPlugin(&plugin.SimpleCommand{})
 	return
 }
 
@@ -445,7 +445,7 @@ func (mpm *MinecraftPluginManager) initErrorHandler() {
 	}
 	mpm.errBus = make(chan error, 1)
 	go mpm.errorHandler()
-	go mpm.monitorGameStopWorker(mpm.RegisterManagerMessageChannel(false))
+	go mpm.monitorGameStopWorker(mpm.RegisterManagerMessageChannel())
 }
 
 func (mpm *MinecraftPluginManager) initManager() (err error) {
@@ -458,7 +458,8 @@ func (mpm *MinecraftPluginManager) initManager() (err error) {
 	if err != nil {
 		return err
 	}
-	return mpm.StartMinecraft()
+	go mpm.StartMinecraft()
+	return nil
 }
 
 func NewPluginManager() (pm *MinecraftPluginManager) {
@@ -466,16 +467,18 @@ func NewPluginManager() (pm *MinecraftPluginManager) {
 	return pm
 }
 
-func (mpm *MinecraftPluginManager) init() (err error) {
+func (mpm *MinecraftPluginManager) Init() *MinecraftPluginManager {
 	if mpm.plugins == nil {
 		mpm.plugins = make(map[string]*PluginManager)
 	}
-	mpm.context = context.Background()
-	return
+	if mpm.context == nil {
+		mpm.context = context.Background()
+	}
+	return mpm
 }
 
 func (mpm *MinecraftPluginManager) Dial(server string) (err error) {
-	mpm.init()
+	mpm.Init()
 	mpm.Address = server
 	conn, err := grpc.NewClient(mpm.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

@@ -48,7 +48,6 @@ type ScoreboardCore struct {
 	scorelist   []string
 	trigger     map[string]MinecraftTrigger
 	triggerInfo *regexp.Regexp
-	tlock       sync.RWMutex
 	lock        sync.RWMutex
 	debounce    *time.Timer
 }
@@ -63,7 +62,7 @@ func (sc *ScoreboardCore) Init(pm pluginabi.PluginManager) error {
 }
 
 func (sc *ScoreboardCore) cleanExpiredTrigger() {
-	sc.tlock.Lock()
+	sc.lock.Lock()
 	cleanupTransaction := []string{}
 	now := time.Now()
 	for key, value := range sc.trigger {
@@ -87,7 +86,7 @@ func (sc *ScoreboardCore) cleanExpiredTrigger() {
 			)
 		}
 	}
-	sc.tlock.Unlock()
+	sc.lock.Unlock()
 	if len(cleanupTransaction) > 0 {
 		sc.RunCommand(strings.Join(cleanupTransaction, "\n"))
 	}
@@ -108,9 +107,9 @@ func (sc *ScoreboardCore) processTrigger(logText string, _ bool) {
 		parsedvalue, _ := strconv.ParseInt(triggerInfo[4], 10, 0)
 		value = int(parsedvalue)
 	}
-	sc.tlock.RLock()
+	sc.lock.RLock()
 	triggerEntry, ok := sc.trigger[trigger]
-	sc.tlock.RUnlock()
+	sc.lock.RUnlock()
 	triggerEntry.Time--
 	if ok && triggerEntry.Time != 0 {
 		sc.RunCommand(fmt.Sprintf("scoreboard players enable %s %s", triggerEntry.Selector, trigger))
@@ -240,7 +239,7 @@ func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, trigger 
 	triggername := ""
 	commandTransaction := []string{}
 	namespace := sc.getNamespace(context)
-	sc.tlock.Lock()
+	sc.lock.Lock()
 	for _, triggerEntry := range trigger {
 		for {
 			trigIdx := rand.Uint32()
@@ -264,7 +263,7 @@ func (sc *ScoreboardCore) registerTrigger(context pluginabi.PluginName, trigger 
 			fmt.Sprintf("scoreboard players enable %s %s", triggerEntry.Selector, triggername),
 		)
 	}
-	sc.tlock.Unlock()
+	sc.lock.Unlock()
 	sc.Println(
 		color.YellowString("插件 "),
 		color.BlueString(context.DisplayName()),
@@ -279,17 +278,22 @@ func (sc *ScoreboardCore) clearTrigger() {
 	triggerListStr := sc.RunCommand("scoreboard objectives list")
 	triggerStrList := strings.Split(triggerListStr, ":")
 	commandList := []string{}
-	if len(triggerStrList) == 2 {
-		triggerStrList := lo.Map(strings.Split(triggerStrList[1], ","), func(item string, index int) string {
-			return strings.Trim(strings.TrimSpace(item), "[]")
-		})
-		for _, trigger := range triggerStrList {
-			if strings.Contains(trigger, "tri_") {
-				commandList = append(commandList, fmt.Sprintf(`scoreboard objectives remove %s`, trigger))
-			}
-		}
-		sc.RunCommand(strings.Join(commandList, "\n"))
+	if len(triggerStrList) != 2 {
+		return
 	}
+	triggerStrList = lo.Map(strings.Split(triggerStrList[1], ","), func(item string, index int) string {
+		return strings.Trim(strings.TrimSpace(item), "[]")
+	})
+	for _, trigger := range triggerStrList {
+		if strings.Contains(trigger, "tri_") {
+			commandList = append(commandList, fmt.Sprintf(`scoreboard objectives remove %s`, trigger))
+		}
+	}
+	if len(commandList) == 0 {
+		return
+	}
+	sc.RunCommand(strings.Join(commandList, "\n"))
+
 }
 
 func (sc *ScoreboardCore) syncScore() {

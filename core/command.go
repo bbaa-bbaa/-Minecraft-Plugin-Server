@@ -40,6 +40,10 @@ type MinecraftCommandProcessor struct {
 	cleanSignal      chan struct{}
 }
 
+func (mc *MinecraftCommandProcessor) Depends() []string {
+	return nil
+}
+
 func (mc *MinecraftCommandProcessor) Println(a ...any) (int, error) {
 	return mc.managerClient.Println(color.MagentaString(mc.DisplayName()), a...)
 }
