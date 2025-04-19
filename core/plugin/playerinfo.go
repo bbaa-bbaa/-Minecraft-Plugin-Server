@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"regexp"
@@ -26,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
@@ -415,7 +417,17 @@ func (pi *PlayerInfo) DisplayName() string {
 }
 
 func (pi *PlayerInfo) Load() error {
-	data, err := os.ReadFile("data/playerinfo.json")
+	file, err := os.OpenFile("data/playerinfo.json", os.O_RDONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_SH); err != nil {
+		return fmt.Errorf("can't get file lock: %w", err)
+	}
+
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return err
 	}
@@ -432,6 +444,7 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 	if mpi == nil {
 		return fmt.Errorf("无玩家信息")
 	}
+
 	pi.data.RLock()
 	saveData, err := json.MarshalIndent(pi.data, "", "\t")
 	pi.data.RUnlock()
@@ -439,5 +452,16 @@ func (pi *PlayerInfo) Commit(mpi *MinecraftPlayerInfo) error {
 		return err
 	}
 
-	return os.WriteFile("data/playerinfo.json", saveData, 0644)
+	file, err := os.OpenFile("data/playerinfo.json", os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("can't get file lock: %w", err)
+	}
+
+	_, err = file.Write(saveData)
+	return err
 }

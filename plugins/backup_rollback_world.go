@@ -101,13 +101,13 @@ func (rwp *RollbackWorldPending) Start(caller *BackupPlugin) {
 
 func (rwp *RollbackWorldPending) Execute() {
 	rwp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
+		{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Yellow},
 		{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
 	})
 	for range rwp.comfirm.C {
 		rwp.countdown--
 		rwp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Aqua},
+			{Text: fmt.Sprintf("%d", rwp.countdown), Color: tellraw.Yellow},
 			{Text: " 秒后将重启服务器回档", Color: tellraw.Red},
 		})
 		if rwp.countdown == 0 {

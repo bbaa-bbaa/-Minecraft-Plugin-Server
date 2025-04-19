@@ -112,7 +112,7 @@ func (rpp *RollbackPlayerdataPending) Start(caller *BackupPlugin) {
 
 func (rpp *RollbackPlayerdataPending) Execute() {
 	rpp.bp.Tellraw("@a", []tellraw.Message{
-		{Text: fmt.Sprintf("%d", rpp.countdown), Color: tellraw.Aqua},
+		{Text: fmt.Sprintf("%d", rpp.countdown), Color: tellraw.Yellow},
 		{Text: " 秒后将回档玩家 ", Color: tellraw.Red},
 		{Text: rpp.player, Color: tellraw.Yellow},
 		{Text: " 数据", Color: tellraw.Red},
@@ -120,7 +120,7 @@ func (rpp *RollbackPlayerdataPending) Execute() {
 	for range rpp.comfirm.C {
 		rpp.countdown--
 		rpp.bp.Tellraw("@a", []tellraw.Message{
-			{Text: fmt.Sprintf("%d", rpp.countdown), Color: tellraw.Aqua},
+			{Text: fmt.Sprintf("%d", rpp.countdown), Color: tellraw.Yellow},
 			{Text: " 秒后将回档玩家 ", Color: tellraw.Red},
 			{Text: rpp.player, Color: tellraw.Yellow},
 			{Text: " 数据", Color: tellraw.Red},

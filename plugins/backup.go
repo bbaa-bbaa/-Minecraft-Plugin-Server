@@ -27,6 +27,7 @@ import (
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin"
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/pluginabi"
 	"git.bbaa.fun/bbaa/minecraft-plugin-daemon/core/plugin/tellraw"
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/samber/lo"
 )
@@ -41,16 +42,16 @@ type BackupPlugin_RollbackPending interface {
 
 type BackupPlugin struct {
 	plugin.BasePlugin
-	Source                 string // Minecraft world source dir
-	Dest                   string // backup dest
-	backupLock             sync.Mutex
-	rollbackLock           sync.RWMutex
-	cron                   gocron.Scheduler
-	rollbackPending        BackupPlugin_RollbackPending
-	backupPlayerdataTicker *time.Ticker
-	pm                     pluginabi.PluginManager
-	ExtPlayerdataDir       []string
-	ExtPlayerdataExt       []string
+	Source           string // Minecraft world source dir
+	Dest             string // backup dest
+	backupLock       sync.Mutex
+	rollbackLock     sync.RWMutex
+	cron             gocron.Scheduler
+	rollbackPending  BackupPlugin_RollbackPending
+	pm               pluginabi.PluginManager
+	fswatcher        *fsnotify.Watcher
+	ExtPlayerdataDir []string
+	ExtPlayerdataExt []string
 }
 
 func (bp *BackupPlugin) DisplayName() string {
@@ -351,6 +352,13 @@ func (bp *BackupPlugin) rollbackPlayerdataList(player string, start string) {
 		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
 		return
 	}
+	bp.Tellraw("@a", []tellraw.Message{
+		{Text: "玩家数据备份列表", Color: tellraw.Yellow},
+		{Text: "（", Color: tellraw.Yellow},
+		{Text: player, Color: tellraw.Green},
+		{Text: "）", Color: tellraw.Yellow},
+		{Text: "：", Color: tellraw.Yellow},
+	})
 	bp.showList(backupList, index, min(len(backupList), index+BackupPlugin_PageSize), func(selected string) tellraw.GoFunc {
 		return func(triggerplayer string, i int) {
 			if triggerplayer != player {
@@ -361,7 +369,15 @@ func (bp *BackupPlugin) rollbackPlayerdataList(player string, start string) {
 			}
 			bp.rollbackPlayerdataSelected(player, selected)
 		}
-	}, bp.rollbackPlayerdataList)
+	}, func(triggerplayer string, start string) {
+		if triggerplayer != player {
+			bp.Tellraw(triggerplayer, []tellraw.Message{
+				{Text: "该列表仅能由请求回档的玩家进行选择", Color: tellraw.Red},
+			})
+			return
+		}
+		bp.rollbackPlayerdataList(player, start)
+	})
 }
 
 func (bp *BackupPlugin) rollbackList(_ string, start string) {
@@ -383,6 +399,10 @@ func (bp *BackupPlugin) rollbackList(_ string, start string) {
 		bp.Tellraw("@a", []tellraw.Message{{Text: "无可用备份", Color: tellraw.Red}})
 		return
 	}
+	bp.Tellraw("@a", []tellraw.Message{
+		{Text: "整世界备份列表", Color: tellraw.Yellow},
+		{Text: "：", Color: tellraw.Yellow},
+	})
 	bp.showList(backupList, index, min(len(backupList), index+BackupPlugin_PageSize), func(selected string) tellraw.GoFunc {
 		return func(player string, i int) {
 			bp.rollbackSelected(player, selected)
@@ -472,6 +492,7 @@ func (bp *BackupPlugin) Cli(player string, args ...string) {
 }
 
 func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
+	bp.pm = pm
 	err = bp.BasePlugin.Init(pm, bp)
 	if err != nil {
 		return err
@@ -490,22 +511,37 @@ func (bp *BackupPlugin) Init(pm pluginabi.PluginManager) (err error) {
 
 func (bp *BackupPlugin) Start() {
 	bp.cron.Start()
-	if bp.backupPlayerdataTicker == nil {
-		bp.backupPlayerdataTicker = time.NewTicker(60 * time.Second)
-		go func() {
-			for range bp.backupPlayerdataTicker.C {
+	bp.MakePlayerDataBackup()
+	var err error
+	bp.fswatcher, err = fsnotify.NewWatcher()
+	if err != nil {
+		bp.TellrawError("@a", err)
+	}
+	err = bp.fswatcher.Add(bp.Source)
+	if err != nil {
+		bp.TellrawError("@a", err)
+	}
+	go func() {
+		for {
+			select {
+			case _, ok := <-bp.fswatcher.Events:
+				if !ok {
+					return
+				}
 				if len(bp.GetPlayerList()) > 0 {
 					bp.MakePlayerDataBackup()
 				}
+			case err, ok := <-bp.fswatcher.Errors:
+				if !ok {
+					return
+				}
+				bp.TellrawError("@a", err)
 			}
-		}()
-	} else {
-		bp.backupPlayerdataTicker.Reset(60 * time.Second)
-	}
-	bp.MakePlayerDataBackup()
+		}
+	}()
 }
 
 func (bp *BackupPlugin) Pause() {
 	bp.cron.StopJobs()
-	bp.backupPlayerdataTicker.Stop()
+	bp.fswatcher.Close()
 }

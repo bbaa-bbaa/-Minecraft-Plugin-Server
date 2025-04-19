@@ -16,7 +16,7 @@ package core
 
 import "regexp"
 
-var DedicatedServerMessage = regexp.MustCompile(`\[.*\]: (.*)$`)
+var DedicatedServerMessage = regexp.MustCompile(`Server thread/INFO.*\[.*\]: (.*)$`)
 var PlayerMessage = regexp.MustCompile(`\]\:(?: \[[^\]]+\])? <(.*?)>(.*)`)
 var PlayerJoinLeaveMessage = regexp.MustCompile(`\w+ (left|joined) the game`)
 var LoginMessage = regexp.MustCompile(`\[.*\]:.*? logged in with`)
